@@ -1,0 +1,82 @@
+{
+  "name": "financebot",
+  "version": "0.1.0",
+  "description": "Local desktop financial management app with AI chat, Akahu bank sync, insurance auditing, and Discord alerts.",
+  "author": "FinanceBot",
+  "license": "MIT",
+  "main": "./out/main/index.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "dev": "electron-vite dev",
+    "start": "electron-vite preview",
+    "build": "electron-vite build",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "test": "node --test test/dates.test.ts test/filters.test.ts test/cycle.test.ts test/reconcile.test.ts test/forecast.test.ts test/updater.test.ts",
+    "postinstall": "electron-rebuild -f -w better-sqlite3",
+    "package:win": "npm run build && electron-builder --win",
+    "release:win": "npm run build && electron-builder --win && node scripts/make-update-manifest.mjs",
+    "publish:win": "node scripts/make-update-manifest.mjs --publish",
+    "eval:ai": "npm run build && electron . --run-evals"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.8.1",
+    "dotenv": "^16.4.5",
+    "imapflow": "^1.7.8",
+    "mailparser": "^3.12.4",
+    "pdf-parse": "^1.1.1",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.12.7",
+    "tesseract.js": "^5.1.1"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.6.0",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/node": "^20.14.15",
+    "@types/pdf-parse": "^1.1.4",
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "autoprefixer": "^10.4.19",
+    "electron": "^33.2.0",
+    "electron-builder": "^24.13.3",
+    "electron-vite": "^2.3.0",
+    "postcss": "^8.4.40",
+    "tailwindcss": "^3.4.7",
+    "typescript": "^5.5.4",
+    "vite": "^5.3.5"
+  },
+  "build": {
+    "appId": "nz.financebot.app",
+    "productName": "FinanceBot",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "!src/*",
+      "!shared/*",
+      "!test/*",
+      "!electron.vite.config.{js,ts,mjs,cjs}",
+      "!{.env,.env.example,.env.*,.npmrc}",
+      "!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}",
+      "!{tailwind.config.js,postcss.config.js}",
+      "!{README.md,.gitignore}"
+    ],
+    "npmRebuild": false,
+    "win": {
+      "target": "nsis"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "FinanceBot"
+    }
+  }
+}

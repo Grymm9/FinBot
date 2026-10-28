@@ -1,0 +1,92 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+  --color-bg: #141518;
+  --color-surface-glass: rgba(255, 255, 255, 0.06);
+  --color-surface-hover: rgba(255, 255, 255, 0.11);
+  --color-border: rgba(255, 255, 255, 0.16);
+  --color-border-bright: rgba(255, 255, 255, 0.32);
+  --color-text: #f5f5f2;
+  --color-text-muted: #a3a3ad;
+  --color-primary: #3ea6ff;
+  --color-highlight: rgba(255, 255, 255, 0.2);
+  --backdrop-blur: blur(20px) saturate(180%);
+  --blue-glow: radial-gradient(circle at 80% 30%, rgba(62, 166, 255, 0.22) 0%, transparent 60%);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background-color: var(--color-bg);
+  background-image: var(--blue-glow);
+  background-attachment: fixed;
+  color: var(--color-text);
+  font-family: Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Frosted glass surfaces (opaque, translucent, with subtle glowing borders) */
+.glass {
+  background: var(--color-surface-glass);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  border: 1px solid var(--color-border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4), inset 0 1px 0 var(--color-highlight),
+    inset 0 -1px 2px rgba(0, 0, 0, 0.3);
+  transition: background 0.2s cubic-bezier(0.2, 0, 0, 1), border-color 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.glass-hover:hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-border-bright);
+}
+
+/* Glass sidebar / shell panel (no card padding, for app chrome) */
+.glass-shell {
+  background: var(--color-surface-glass);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  border: 1px solid var(--color-border);
+  box-shadow: inset 0 1px 0 var(--color-highlight);
+}
+
+/* Slim, dark scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #454a57 transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: #454a57;
+  border-radius: 8px;
+  border: 2px solid #141518;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Fade-in for view transitions */
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-in {
+  animation: fade-in 0.25s ease-out;
+}
