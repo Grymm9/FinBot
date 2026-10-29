@@ -1,5 +1,6 @@
 import { getDb } from '../db'
 import { sendDiscordMessage } from './discord'
+import { isAiConfigured } from './ai-config'
 import { getSetting } from './settings'
 import { todayLocalIso } from './dates'
 import type { HealthStatus, ServiceHealth } from '@shared/types'
@@ -75,7 +76,7 @@ export function isServiceConfigured(service: string): boolean {
     case 'discord':
       return !!getSetting('DISCORD_BOT_TOKEN') && !!getSetting('DISCORD_CHANNEL_ID')
     case 'memory':
-      return !!getSetting('DEEPSEEK_API_KEY')
+      return isAiConfigured()
     default:
       return true
   }

@@ -111,7 +111,7 @@ export default function Sidebar({
         <BrandMark className="h-9 w-9 drop-shadow-[0_0_14px_rgba(62,166,255,0.45)]" />
         <div>
           <p className="text-sm font-semibold text-slate-100">FinanceBot</p>
-          <p className="text-[10px] text-slate-500">Akahu · DeepSeek</p>
+          <p className="text-[10px] text-slate-500">Akahu · AI advisor</p>
         </div>
       </div>
 

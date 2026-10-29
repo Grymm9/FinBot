@@ -1,4 +1,5 @@
-import { getSetting } from './settings'
+import { aiConfig } from './ai-config'
+import { modelSupportsTemperature } from '@shared/ai-providers'
 import { toolDefinitions, executeTool } from './tools'
 
 interface ChatMessage {
@@ -23,21 +24,31 @@ export interface StreamResult {
 
 /**
  * Cheap credential check for the setup wizard. Lists models instead of sending
- * a paid completion prompt.
+ * a paid completion prompt. Providers that do not implement `/models` are
+ * treated as reachable once the key is accepted (or when they return 404/405).
  */
 export async function testAiConnection(): Promise<{ ok: boolean; message: string }> {
-  const apiKey = getSetting('DEEPSEEK_API_KEY')
-  if (!apiKey) return { ok: false, message: 'No API key saved yet.' }
-  const baseUrl = (getSetting('DEEPSEEK_BASE_URL') || 'https://api.deepseek.com').replace(/\/+$/, '')
+  const cfg = aiConfig()
+  if (!cfg.apiKey) return { ok: false, message: 'No API key saved yet.' }
+  if (!cfg.baseUrl) return { ok: false, message: 'Set the base URL for this provider first.' }
   try {
-    const res = await fetch(`${baseUrl}/models`, {
-      headers: { Authorization: `Bearer ${apiKey}` },
+    const res = await fetch(`${cfg.baseUrl}/models`, {
+      headers: { Authorization: `Bearer ${cfg.apiKey}` },
       signal: AbortSignal.timeout(15_000)
     })
-    if (!res.ok) return { ok: false, message: `DeepSeek returned HTTP ${res.status}.` }
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, message: `${cfg.providerLabel} rejected that API key (HTTP ${res.status}).` }
+    }
+    if (res.status === 404 || res.status === 405) {
+      return { ok: true, message: `${cfg.providerLabel} key saved (model list not available).` }
+    }
+    if (!res.ok) return { ok: false, message: `${cfg.providerLabel} returned HTTP ${res.status}.` }
     const body = (await res.json().catch(() => null)) as { data?: unknown[] } | null
     const count = Array.isArray(body?.data) ? body.data.length : 0
-    return { ok: true, message: count > 0 ? `Connected — ${count} models available.` : 'Connected.' }
+    return {
+      ok: true,
+      message: count > 0 ? `Connected to ${cfg.providerLabel} — ${count} models available.` : 'Connected.'
+    }
   } catch (e) {
     return { ok: false, message: (e as Error).message }
   }
@@ -92,10 +103,10 @@ function apiHeaders(apiKey: string): Record<string, string> {
   return { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` }
 }
 
-async function checkResponse(res: Response): Promise<void> {
+async function checkResponse(res: Response, label: string): Promise<void> {
   if (!res.ok) {
     const body = await res.text().catch(() => '')
-    throw new Error(`DeepSeek API error (${res.status}): ${body.slice(0, 500)}`)
+    throw new Error(`${label} API error (${res.status}): ${body.slice(0, 500)}`)
   }
 }
 
@@ -105,15 +116,18 @@ async function streamReasoning(
   apiKey: string,
   model: string,
   messages: Array<Record<string, unknown>>,
-  opts: StreamOptions
+  opts: StreamOptions,
+  label: string
 ): Promise<StreamResult> {
+  const payload: Record<string, unknown> = { model, messages, stream: true }
+  if (modelSupportsTemperature(model)) payload.temperature = opts.temperature ?? 0.4
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: apiHeaders(apiKey),
-    body: JSON.stringify({ model, messages, stream: true, temperature: opts.temperature ?? 0.4 })
+    body: JSON.stringify(payload)
   })
-  await checkResponse(res)
-  if (!res.body) throw new Error('DeepSeek response had no body.')
+  await checkResponse(res, label)
+  if (!res.body) throw new Error(`${label} response had no body.`)
 
   const reader = res.body.getReader()
   const decoder = new TextDecoder()
@@ -157,14 +171,17 @@ async function callAction(
   apiKey: string,
   model: string,
   messages: Array<Record<string, unknown>>,
-  tools: Array<Record<string, unknown>>
+  tools: Array<Record<string, unknown>>,
+  label: string
 ): Promise<{ content: string; toolCalls: ToolCall[] }> {
+  const payload: Record<string, unknown> = { model, messages, tools, stream: false }
+  if (modelSupportsTemperature(model)) payload.temperature = 0.2
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: apiHeaders(apiKey),
-    body: JSON.stringify({ model, messages, tools, stream: false, temperature: 0.2 })
+    body: JSON.stringify(payload)
   })
-  await checkResponse(res)
+  await checkResponse(res, label)
   const json = (await res.json()) as {
     choices?: Array<{ message?: { content?: string; tool_calls?: Array<{ id: string; function: { name: string; arguments: string } }> } }>
   }
@@ -180,20 +197,26 @@ async function callAction(
 }
 
 /**
- * Hybrid chat: `deepseek-chat` (action model) handles tool calls / mutations,
- * `deepseek-reasoner` (reasoning model) handles pure Q&A. The action model is
- * tried first; if it requests no tools, the request is re-routed to the
- * reasoning model for a deep, streamed answer.
+ * Hybrid chat: the action model handles tool calls / mutations, then pure Q&A
+ * is re-routed to the reasoning model for a deeper, streamed answer. Both
+ * models come from the configured provider (DeepSeek, OpenAI, Claude or
+ * Gemini, all through the OpenAI-compatible API).
  */
 export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
-  const apiKey = getSetting('DEEPSEEK_API_KEY')
-  if (!apiKey) {
-    throw new Error('DeepSeek API key is not configured. Set DEEPSEEK_API_KEY in Settings or .env.')
+  const cfg = aiConfig()
+  if (!cfg.apiKey) {
+    throw new Error(
+      `No ${cfg.providerLabel} API key is configured. Add one in Settings → AI advisor.`
+    )
+  }
+  if (!cfg.usable) {
+    throw new Error(`The ${cfg.providerLabel} base URL or model is missing. Check Settings → AI advisor.`)
   }
 
-  const baseUrl = (getSetting('DEEPSEEK_BASE_URL') || 'https://api.deepseek.com').replace(/\/+$/, '')
-  const actionModel = getSetting('DEEPSEEK_MODEL') || 'deepseek-chat'
-  const reasoningModel = getSetting('DEEPSEEK_REASONING_MODEL') || 'deepseek-reasoner'
+  const baseUrl = cfg.baseUrl
+  const actionModel = cfg.model
+  const reasoningModel = cfg.reasoningModel || cfg.model
+  const label = cfg.providerLabel
   const tools = toolDefinitions()
 
   const messages: Array<Record<string, unknown>> = opts.messages.map((m) => ({
@@ -205,7 +228,7 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
   let finalContent = ''
 
   for (let iter = 0; iter < 8; iter++) {
-    const { content, toolCalls } = await callAction(baseUrl, apiKey, actionModel, messages, tools)
+    const { content, toolCalls } = await callAction(baseUrl, cfg.apiKey, actionModel, messages, tools, label)
     if (toolCalls.length === 0) {
       finalContent = content
       break
@@ -244,7 +267,7 @@ export async function streamChat(opts: StreamOptions): Promise<StreamResult> {
   }
 
   // No tools were requested → route to the reasoning model for a deep answer.
-  return streamReasoning(baseUrl, apiKey, reasoningModel, messages, opts)
+  return streamReasoning(baseUrl, cfg.apiKey, reasoningModel, messages, opts, label)
 }
 
 /** Non-streaming convenience wrapper used for quick completions/tests. */

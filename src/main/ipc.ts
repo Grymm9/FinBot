@@ -55,7 +55,17 @@ import {
   subscriptionMonthlyTotal
 } from './services/subscriptions'
 import { listGoals, createGoal, updateGoal, deleteGoal, contributeToGoal } from './services/goals'
-import { createBackup, listBackups, restoreBackup, exportTransactionsCsv } from './services/backup'
+import {
+  backupDirInfo,
+  chooseBackupDir,
+  createBackup,
+  exportTransactionsCsv,
+  importBackupFile,
+  listBackups,
+  openBackupDir,
+  restoreBackup
+} from './services/backup'
+import { aiConfig } from './services/ai-config'
 import { getSetting, setSetting, getAllSettings } from './services/settings'
 import { getHealth } from './services/health'
 import { buildCashFlowForecast } from './services/forecast'
@@ -105,9 +115,15 @@ export function registerIpcHandlers(): void {
   })
   ipcMain.handle('settings:get-masked', () => {
     const mask = (v: string): string => (v ? `${v.slice(0, 4)}…${v.slice(-4)}` : '')
+    const ai = aiConfig()
     return {
       AKAHU_APP_TOKEN: mask(getSetting('AKAHU_APP_TOKEN')),
       AKAHU_USER_TOKEN: mask(getSetting('AKAHU_USER_TOKEN')),
+      AI_PROVIDER: ai.provider,
+      AI_API_KEY: mask(ai.apiKey),
+      AI_MODEL: ai.model,
+      AI_BASE_URL: ai.baseUrl,
+      AI_REASONING_MODEL: ai.reasoningModel,
       DEEPSEEK_API_KEY: mask(getSetting('DEEPSEEK_API_KEY')),
       DEEPSEEK_BASE_URL: getSetting('DEEPSEEK_BASE_URL', 'https://api.deepseek.com'),
       DEEPSEEK_MODEL: getSetting('DEEPSEEK_MODEL', 'deepseek-chat'),
@@ -417,6 +433,14 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('backup:list', () => listBackups())
   ipcMain.handle('backup:create', () => createBackup(true))
   ipcMain.handle('backup:restore', (_e, fileName: string) => restoreBackup(fileName))
+  ipcMain.handle('backup:dir', () => backupDirInfo())
+  ipcMain.handle('backup:choose-dir', (event) =>
+    chooseBackupDir(BrowserWindow.fromWebContents(event.sender))
+  )
+  ipcMain.handle('backup:open-dir', () => openBackupDir())
+  ipcMain.handle('backup:import', (event) =>
+    importBackupFile(BrowserWindow.fromWebContents(event.sender))
+  )
   ipcMain.handle('backup:export-csv', (event) =>
     exportTransactionsCsv(BrowserWindow.fromWebContents(event.sender))
   )

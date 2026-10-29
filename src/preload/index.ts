@@ -25,6 +25,8 @@ import type {
   Goal,
   TransactionSearchResult,
   BackupInfo,
+  BackupDirInfo,
+  BackupImportResult,
   Reminder,
   Settings,
   SyncResult,
@@ -298,6 +300,11 @@ const api = {
   createBackup: (): Promise<BackupInfo | null> => ipcRenderer.invoke('backup:create'),
   restoreBackup: (fileName: string): Promise<{ ok: boolean; error?: string }> =>
     ipcRenderer.invoke('backup:restore', fileName),
+  getBackupDir: (): Promise<BackupDirInfo> => ipcRenderer.invoke('backup:dir'),
+  chooseBackupDir: (): Promise<{ canceled: boolean; dir?: string; copied?: number; error?: string }> =>
+    ipcRenderer.invoke('backup:choose-dir'),
+  openBackupDir: (): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('backup:open-dir'),
+  importBackup: (): Promise<BackupImportResult> => ipcRenderer.invoke('backup:import'),
   exportTransactionsCsv: (): Promise<{ canceled: boolean; path?: string; rows?: number; error?: string }> =>
     ipcRenderer.invoke('backup:export-csv'),
 

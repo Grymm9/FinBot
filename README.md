@@ -142,9 +142,14 @@ URLs never change between versions.
 |---|---|
 | `AKAHU_APP_TOKEN` | Akahu app token |
 | `AKAHU_USER_TOKEN` | Akahu personal access token for your account |
-| `DEEPSEEK_API_KEY` | DeepSeek API key |
-| `DEEPSEEK_BASE_URL` | Base URL (default `https://api.deepseek.com`) |
-| `DEEPSEEK_MODEL` | Model id (default `deepseek-chat`) |
+| `AI_PROVIDER` | `deepseek`, `openai`, `anthropic`, `gemini` or `custom` |
+| `AI_API_KEY` | API key for the selected provider |
+| `AI_BASE_URL` | OpenAI-compatible base URL (defaults per provider) |
+| `AI_MODEL` | Model id (defaults per provider) |
+| `AI_REASONING_MODEL` | Second-pass model for question answering |
+| `DEEPSEEK_API_KEY` | Legacy DeepSeek key (still read when provider is DeepSeek) |
+| `DEEPSEEK_BASE_URL` | Legacy DeepSeek base URL (default `https://api.deepseek.com`) |
+| `DEEPSEEK_MODEL` | Legacy DeepSeek model id (default `deepseek-chat`) |
 | `DISCORD_WEBHOOK_URL` | Discord webhook for phone alerts |
 | `INCOME_CYCLE_DAY` | Day your income lands (default `15`) |
 | `BUDGET_CHECK_DAY` | Check budget pacing up to this day (default `15`) |
@@ -155,8 +160,10 @@ You can also configure everything from the **Settings** tab inside the app (valu
 ### Getting your tokens
 
 - **Akahu** — sign up at [my.akahu.nz](https://my.akahu.nz), create an app, then generate a **Personal App** (app token + user token) linked to your bank.
-- **DeepSeek** — [platform.deepseek.com](https://platform.deepseek.com) → API keys.
+- **DeepSeek / ChatGPT / Claude / Gemini** — choose the provider in **Settings → AI advisor** (or the setup assistant) and paste a key from [platform.deepseek.com](https://platform.deepseek.com), [platform.openai.com](https://platform.openai.com/api-keys), [console.anthropic.com](https://console.anthropic.com) or [aistudio.google.com](https://aistudio.google.com/apikey). Any other OpenAI-compatible endpoint can be used via **Other**.
 - **Discord** — Server Settings → Integrations → Webhooks → New Webhook → copy the URL.
+
+> **Backups** — daily snapshots are written to `Documents\FinanceBot Backups` (packaged) or the project's `Backup` folder (development). Change the folder, open it, or import a backup file from **Settings → Data & backups**. Restoring takes a safety snapshot of the current data first.
 
 ---
 
@@ -247,7 +254,7 @@ FinanceBot/
 ## Troubleshooting
 
 - **“Akahu tokens are not configured”** — set `AKAHU_APP_TOKEN` + `AKAHU_USER_TOKEN` in `.env` or Settings, or import a statement CSV instead.
-- **“DeepSeek API key is not configured”** — set `DEEPSEEK_API_KEY`.
+- **“DeepSeek API key is not configured”** (or another provider name) — add a key for the selected provider in **Settings → AI advisor**.
 - **Windows SmartScreen blocks the installer** — it is unsigned; choose **More info → Run anyway**.
 - **Dashboard is empty on a new PC** — skip Akahu, then import a statement CSV from Transactions; budgets, subscriptions, forecast and alerts need transactions to work.
 - **`better-sqlite3` fails to load** — run `npx electron-rebuild -f -w better-sqlite3`.

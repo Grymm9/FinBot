@@ -19,7 +19,7 @@ export default function SetupChecklist({
 
   const hasBank = !!settings.AKAHU_APP_TOKEN && !!settings.AKAHU_USER_TOKEN
   const hasData = (bankStatus?.transactions ?? 0) > 0
-  const hasAi = !!settings.DEEPSEEK_API_KEY
+  const hasAi = !!settings.AI_API_KEY || !!settings.DEEPSEEK_API_KEY
   const hasAlerts = !!settings.DISCORD_WEBHOOK_URL
 
   const items = [
@@ -28,7 +28,7 @@ export default function SetupChecklist({
       detail: 'Connect Akahu, or import a bank statement CSV.',
       key: 'bank'
     },
-    !hasAi && { label: 'AI advisor is off', detail: 'Add a DeepSeek API key to enable chat.', key: 'ai' },
+    !hasAi && { label: 'AI advisor is off', detail: 'Add an API key (DeepSeek, OpenAI, Claude or Gemini).', key: 'ai' },
     !hasAlerts && { label: 'Alerts are off', detail: 'Add a Discord webhook for budget warnings.', key: 'alerts' }
   ].filter(Boolean) as Array<{ label: string; detail: string; key: string }>
 

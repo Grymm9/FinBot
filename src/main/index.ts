@@ -90,7 +90,8 @@ function completeOnboardingForExistingInstall(): void {
     (db.prepare('SELECT COUNT(*) AS n FROM categories').get() as { n: number }).n > 0 ||
     (db.prepare("SELECT COUNT(*) AS n FROM settings WHERE key NOT LIKE 'ONBOARDING%'").get() as { n: number }).n > 0 ||
     !!process.env.AKAHU_APP_TOKEN ||
-    !!process.env.DEEPSEEK_API_KEY
+    !!process.env.DEEPSEEK_API_KEY ||
+    !!process.env.AI_API_KEY
   if (alreadyUsed) {
     setSetting('ONBOARDING_COMPLETED', '1')
     setSetting('ONBOARDING_STEP', '')

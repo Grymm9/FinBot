@@ -24,6 +24,8 @@ import type {
   Goal,
   TransactionSearchResult,
   BackupInfo,
+  BackupDirInfo,
+  BackupImportResult,
   Reminder,
   Settings,
   SyncResult,
@@ -226,6 +228,10 @@ declare global {
       listBackups: () => Promise<BackupInfo[]>
       createBackup: () => Promise<BackupInfo | null>
       restoreBackup: (fileName: string) => Promise<{ ok: boolean; error?: string }>
+      getBackupDir: () => Promise<BackupDirInfo>
+      chooseBackupDir: () => Promise<{ canceled: boolean; dir?: string; copied?: number; error?: string }>
+      openBackupDir: () => Promise<{ ok: boolean; error?: string }>
+      importBackup: () => Promise<BackupImportResult>
       exportTransactionsCsv: () => Promise<{ canceled: boolean; path?: string; rows?: number; error?: string }>
 
       getDashboardSummary: () => Promise<DashboardSummary>

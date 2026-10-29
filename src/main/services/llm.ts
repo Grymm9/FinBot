@@ -1,4 +1,5 @@
-import { getSetting } from './settings'
+import { aiConfig } from './ai-config'
+import { modelSupportsTemperature } from '@shared/ai-providers'
 
 export interface SimpleMessage {
   role: 'system' | 'user' | 'assistant'
@@ -12,23 +13,28 @@ export interface SimpleMessage {
  *
  * Kept in its own module (rather than in `deepseek.ts`) so that services which
  * the tool layer depends on can summarise without an import cycle through
- * `tools.ts`.
+ * `tools.ts`. Works with any configured OpenAI-compatible provider.
  */
 export async function quickChat(messages: SimpleMessage[]): Promise<string> {
-  const apiKey = getSetting('DEEPSEEK_API_KEY')
-  if (!apiKey) return ''
-  const baseUrl = (getSetting('DEEPSEEK_BASE_URL') || 'https://api.deepseek.com').replace(/\/+$/, '')
-  const model = getSetting('DEEPSEEK_MODEL') || 'deepseek-chat'
+  const cfg = aiConfig()
+  if (!cfg.apiKey || !cfg.usable) return ''
+
+  const payload: Record<string, unknown> = {
+    model: cfg.model,
+    messages,
+    stream: false
+  }
+  if (modelSupportsTemperature(cfg.model)) payload.temperature = 0.2
 
   try {
-    const res = await fetch(`${baseUrl}/chat/completions`, {
+    const res = await fetch(`${cfg.baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
-      body: JSON.stringify({ model, messages, stream: false, temperature: 0.2 })
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` },
+      body: JSON.stringify(payload)
     })
     if (!res.ok) {
       const body = await res.text().catch(() => '')
-      throw new Error(`DeepSeek API error (${res.status}): ${body.slice(0, 300)}`)
+      throw new Error(`${cfg.providerLabel} API error (${res.status}): ${body.slice(0, 300)}`)
     }
     const json = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
     return json.choices?.[0]?.message?.content ?? ''

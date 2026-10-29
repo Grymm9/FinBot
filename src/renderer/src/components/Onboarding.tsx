@@ -3,6 +3,7 @@ import type { Settings as SettingsMap } from '@shared/types'
 import { Button } from './ui'
 import BrandMark from './BrandMark'
 import { shortDate } from '../lib/format'
+import { AI_PROVIDERS, aiProviderPreset } from '@shared/ai-providers'
 
 /**
  * First-run setup assistant.
@@ -54,7 +55,7 @@ const STEPS: Step[] = [
     label: 'AI helper',
     title: 'Optional: add the AI advisor',
     blurb:
-      'The DeepSeek-powered chat can read your budget and transaction snapshot to answer questions and make changes you approve. It needs your own API key.'
+      'Connect the AI you already use — DeepSeek, ChatGPT (OpenAI), Claude or Gemini. The chat can read your budget and transaction snapshot to answer questions and make changes you approve. It needs your own API key.'
   },
   {
     id: 'alerts',
@@ -92,7 +93,13 @@ export default function Onboarding({ onDone }: { onDone: () => void }): JSX.Elem
   const [bankBusy, setBankBusy] = useState(false)
   const [bankCounts, setBankCounts] = useState<{ accounts: number; transactions: number } | null>(null)
 
-  const [ai, setAi] = useState({ key: '', model: 'deepseek-chat', baseUrl: 'https://api.deepseek.com' })
+  const [ai, setAi] = useState({
+    provider: 'deepseek',
+    key: '',
+    model: 'deepseek-chat',
+    baseUrl: 'https://api.deepseek.com',
+    reasoningModel: 'deepseek-reasoner'
+  })
   const [aiMsg, setAiMsg] = useState('')
   const [aiBusy, setAiBusy] = useState(false)
 
@@ -131,9 +138,11 @@ export default function Onboarding({ onDone }: { onDone: () => void }): JSX.Elem
         anchor: all.INCOME_CYCLE_ANCHOR || ''
       })
       setAi({
+        provider: m.AI_PROVIDER || 'deepseek',
         key: '',
-        model: all.DEEPSEEK_MODEL || 'deepseek-chat',
-        baseUrl: all.DEEPSEEK_BASE_URL || 'https://api.deepseek.com'
+        model: m.AI_MODEL || 'deepseek-chat',
+        baseUrl: m.AI_BASE_URL || 'https://api.deepseek.com',
+        reasoningModel: m.AI_REASONING_MODEL || 'deepseek-reasoner'
       })
       setLaunchAtLogin(login || all.LAUNCH_AT_LOGIN === '1')
       const resume = Number(all.ONBOARDING_STEP || '0')
@@ -229,9 +238,14 @@ export default function Onboarding({ onDone }: { onDone: () => void }): JSX.Elem
   }
 
   const saveAi = async (): Promise<void> => {
-    if (ai.key.trim()) await window.api.setSetting('DEEPSEEK_API_KEY', ai.key.trim())
-    await window.api.setSetting('DEEPSEEK_MODEL', ai.model || 'deepseek-chat')
-    await window.api.setSetting('DEEPSEEK_BASE_URL', ai.baseUrl.trim() || 'https://api.deepseek.com')
+    await window.api.setSetting('AI_PROVIDER', ai.provider || 'deepseek')
+    if (ai.key.trim()) await window.api.setSetting('AI_API_KEY', ai.key.trim())
+    await window.api.setSetting('AI_MODEL', ai.model.trim())
+    await window.api.setSetting('AI_BASE_URL', ai.baseUrl.trim())
+    await window.api.setSetting(
+      'AI_REASONING_MODEL',
+      ai.reasoningModel.trim() || (ai.provider === 'deepseek' ? 'deepseek-reasoner' : ai.model.trim())
+    )
   }
 
   const testAi = async (): Promise<void> => {
@@ -409,7 +423,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }): JSX.Elem
                   <ul className="mt-2 space-y-1 text-xs">
                     <li>- Sets your pay cycle (the basis for every calculation)</li>
                     <li>- Imports a budget, if you have one</li>
-                    <li>- Optionally connects Akahu, DeepSeek and Discord</li>
+                    <li>- Optionally connects Akahu, an AI provider and Discord</li>
                   </ul>
                 </div>
               </div>
@@ -601,45 +615,91 @@ export default function Onboarding({ onDone }: { onDone: () => void }): JSX.Elem
               <div className="space-y-4">
                 <div className="rounded-xl border border-white/[0.12] bg-white/[0.04] p-4">
                   <p className="text-xs leading-relaxed text-slate-500">
-                    The advisor sends a read-only financial snapshot (budgets, balances, recent transactions) to the
-                    DeepSeek API when you ask a question. Without a key the chat stays off; the rest of the app works
-                    normally.
+                    The advisor sends a read-only financial snapshot (budgets, balances, recent transactions) to{' '}
+                    {aiProviderPreset(ai.provider).label} when you ask a question. Without a key the chat stays off; the
+                    rest of the app works normally.
                   </p>
                   <div className="mt-3 grid gap-3 sm:grid-cols-2">
                     <label className={labelCls}>
-                      DeepSeek API key
+                      Provider
+                      <select
+                        value={ai.provider}
+                        onChange={(e) => {
+                          const preset = aiProviderPreset(e.target.value)
+                          setAi({
+                            ...ai,
+                            provider: preset.id,
+                            model: preset.models[0]?.id ?? '',
+                            baseUrl: preset.baseUrl,
+                            reasoningModel:
+                              preset.id === 'deepseek' ? 'deepseek-reasoner' : (preset.models[0]?.id ?? '')
+                          })
+                          setAiMsg('')
+                        }}
+                        className={`${fieldCls} mt-1`}
+                      >
+                        {AI_PROVIDERS.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            {p.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className={labelCls}>
+                      {aiProviderPreset(ai.provider).label} API key
                       <input
                         type="password"
                         value={ai.key}
                         onChange={(e) => setAi({ ...ai, key: e.target.value })}
-                        placeholder={masked.DEEPSEEK_API_KEY || 'sk-...'}
+                        placeholder={
+                          masked.AI_API_KEY && masked.AI_PROVIDER === ai.provider
+                            ? 'Saved — leave blank to keep'
+                            : aiProviderPreset(ai.provider).keyPlaceholder
+                        }
                         className={`${fieldCls} mt-1`}
+                        autoComplete="off"
                       />
                     </label>
                     <label className={labelCls}>
                       Model
-                      <select
+                      <input
+                        list="onboarding-ai-models"
                         value={ai.model}
                         onChange={(e) => setAi({ ...ai, model: e.target.value })}
+                        placeholder={aiProviderPreset(ai.provider).models[0]?.id || 'model id'}
                         className={`${fieldCls} mt-1`}
-                      >
-                        <option value="deepseek-chat">deepseek-chat (fast)</option>
-                        <option value="deepseek-reasoner">deepseek-reasoner (deep reasoning)</option>
-                      </select>
+                      />
+                      <datalist id="onboarding-ai-models">
+                        {aiProviderPreset(ai.provider).models.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </datalist>
                     </label>
-                    <label className={`${labelCls} sm:col-span-2`}>
+                    <label className={labelCls}>
                       Base URL
                       <input
                         value={ai.baseUrl}
                         onChange={(e) => setAi({ ...ai, baseUrl: e.target.value })}
+                        placeholder={aiProviderPreset(ai.provider).baseUrl || 'https://…/v1'}
                         className={`${fieldCls} mt-1`}
                       />
                     </label>
                   </div>
-                  <div className="mt-3">
-                    <Button variant="secondary" onClick={testAi} disabled={aiBusy || !ai.key.trim()}>
+                  <div className="mt-3 flex flex-wrap items-center gap-3">
+                    <Button
+                      variant="secondary"
+                      onClick={testAi}
+                      disabled={
+                        aiBusy || (!ai.key.trim() && !(masked.AI_API_KEY && masked.AI_PROVIDER === ai.provider))
+                      }
+                    >
                       {aiBusy ? 'Testing...' : 'Save & test key'}
                     </Button>
+                    <span className="text-xs text-slate-500">
+                      Create a key at <span className="text-accent">{aiProviderPreset(ai.provider).keyHint}</span>.
+                    </span>
                   </div>
                 </div>
                 {aiMsg && (

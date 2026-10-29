@@ -10,6 +10,7 @@ import type {
 } from '@shared/types'
 import { Button, Card, SectionHeader } from './ui'
 import { getStoredTheme, setTheme, THEMES, type ThemeId } from '../lib/theme'
+import { AI_PROVIDERS, aiProviderPreset } from '@shared/ai-providers'
 
 export default function Settings({
   onChanged,
@@ -19,10 +20,12 @@ export default function Settings({
   onRestartSetup?: () => void
 }): JSX.Element {
   const [masked, setMasked] = useState<SettingsMap | null>(null)
-  const [secrets, setSecrets] = useState({ akahuApp: '', akahuUser: '', deepseekKey: '' })
+  const [secrets, setSecrets] = useState({ akahuApp: '', akahuUser: '', aiKey: '' })
   const [fields, setFields] = useState({
+    aiProvider: 'deepseek',
     baseUrl: '',
     model: '',
+    reasoningModel: '',
     webhook: '',
     incomeDay: '',
     checkDay: '',
@@ -47,6 +50,7 @@ export default function Settings({
   const [emailResult, setEmailResult] = useState<EmailScanResult | null>(null)
   const [scanning, setScanning] = useState(false)
   const [backups, setBackups] = useState<BackupInfo[]>([])
+  const [backupDir, setBackupDir] = useState<{ dir: string; isCustom: boolean } | null>(null)
   const [backupBusy, setBackupBusy] = useState(false)
   const [backupNotice, setBackupNotice] = useState('')
   const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
@@ -63,8 +67,10 @@ export default function Settings({
       const m = await window.api.getMaskedSettings()
       setMasked(m)
       setFields({
-        baseUrl: m.DEEPSEEK_BASE_URL,
-        model: m.DEEPSEEK_MODEL,
+        aiProvider: m.AI_PROVIDER || 'deepseek',
+        baseUrl: m.AI_BASE_URL || '',
+        model: m.AI_MODEL || '',
+        reasoningModel: m.AI_REASONING_MODEL || '',
         webhook: m.DISCORD_WEBHOOK_URL,
         incomeDay: m.INCOME_CYCLE_DAY,
         checkDay: m.BUDGET_CHECK_DAY,
@@ -86,6 +92,7 @@ export default function Settings({
     }
     void load()
     void loadBackups()
+    void window.api.getBackupDir().then(setBackupDir)
     void window.api.getUpdateStatus().then(setUpdateStatus)
     void window.api.getHealth().then(setHealth)
     void window.api.lastAiEval().then(setEvalReport)
@@ -98,9 +105,15 @@ export default function Settings({
     const sets: Array<[string, string]> = []
     if (secrets.akahuApp.trim()) sets.push(['AKAHU_APP_TOKEN', secrets.akahuApp.trim()])
     if (secrets.akahuUser.trim()) sets.push(['AKAHU_USER_TOKEN', secrets.akahuUser.trim()])
-    if (secrets.deepseekKey.trim()) sets.push(['DEEPSEEK_API_KEY', secrets.deepseekKey.trim()])
-    sets.push(['DEEPSEEK_BASE_URL', fields.baseUrl.trim() || 'https://api.deepseek.com'])
-    sets.push(['DEEPSEEK_MODEL', fields.model.trim() || 'deepseek-chat'])
+    if (secrets.aiKey.trim()) sets.push(['AI_API_KEY', secrets.aiKey.trim()])
+    sets.push(['AI_PROVIDER', fields.aiProvider || 'deepseek'])
+    sets.push(['AI_BASE_URL', fields.baseUrl.trim()])
+    sets.push(['AI_MODEL', fields.model.trim()])
+    sets.push([
+      'AI_REASONING_MODEL',
+      fields.reasoningModel.trim() ||
+        (fields.aiProvider === 'deepseek' ? 'deepseek-reasoner' : fields.model.trim())
+    ])
     sets.push(['DISCORD_WEBHOOK_URL', fields.webhook.trim()])
     sets.push(['DISCORD_BOT_TOKEN', fields.botToken.trim()])
     sets.push(['DISCORD_CHANNEL_ID', fields.channelId.trim()])
@@ -120,10 +133,28 @@ export default function Settings({
     sets.push(['AUTO_UPDATE_DOWNLOAD', fields.autoUpdateDownload === '0' ? '0' : '1'])
 
     for (const [k, v] of sets) await window.api.setSetting(k, v)
-    setSecrets({ akahuApp: '', akahuUser: '', deepseekKey: '' })
+    setSecrets({ akahuApp: '', akahuUser: '', aiKey: '' })
     setNotice('Settings saved.')
     onChanged()
     setSaving(false)
+  }
+
+  const testAi = async (): Promise<void> => {
+    await save()
+    const r = await window.api.testAi()
+    setNotice(r.ok ? `✅ ${r.message}` : `❌ ${r.message}`)
+  }
+
+  const chooseAiProvider = (id: string): void => {
+    const preset = aiProviderPreset(id)
+    setFields({
+      ...fields,
+      aiProvider: preset.id,
+      model: preset.models[0]?.id ?? '',
+      baseUrl: preset.baseUrl,
+      reasoningModel:
+        preset.id === 'deepseek' ? 'deepseek-reasoner' : (preset.models[0]?.id ?? '')
+    })
   }
 
   const testDiscord = async (): Promise<void> => {
@@ -169,9 +200,54 @@ export default function Settings({
   }
 
   const restore = async (fileName: string): Promise<void> => {
-    if (!confirm(`Replace the live database with ${fileName}? FinanceBot will restart.`)) return
+    if (
+      !confirm(
+        `Replace the live database with ${fileName}? A snapshot of your current data is saved first, then FinanceBot restarts.`
+      )
+    )
+      return
     const r = await window.api.restoreBackup(fileName)
     if (!r.ok) setBackupNotice(`❌ ${r.error ?? 'Restore failed.'}`)
+  }
+
+  const chooseBackupFolder = async (): Promise<void> => {
+    const r = await window.api.chooseBackupDir()
+    if (r.canceled) return
+    if (r.error) {
+      setBackupNotice(`❌ ${r.error}`)
+      return
+    }
+    setBackupDir(await window.api.getBackupDir())
+    await loadBackups()
+    setBackupNotice(
+      `Backups now save to ${r.dir}${
+        r.copied ? ` (copied ${r.copied} existing snapshot${r.copied === 1 ? '' : 's'})` : ''
+      }.`
+    )
+  }
+
+  const openBackupFolder = async (): Promise<void> => {
+    const r = await window.api.openBackupDir()
+    if (!r.ok) setBackupNotice(`❌ ${r.error ?? 'Could not open the folder.'}`)
+  }
+
+  const importBackupFile = async (): Promise<void> => {
+    setBackupBusy(true)
+    setBackupNotice('')
+    try {
+      const r = await window.api.importBackup()
+      if (r.canceled) return
+      if (r.error) {
+        setBackupNotice(`❌ ${r.error}`)
+        return
+      }
+      await loadBackups()
+      setBackupNotice(
+        `Imported ${r.file?.fileName ?? 'backup'} (${r.transactions ?? 0} transactions, ${r.accounts ?? 0} accounts). Click Restore to use it.`
+      )
+    } finally {
+      setBackupBusy(false)
+    }
   }
 
   const exportCsv = async (): Promise<void> => {
@@ -236,6 +312,9 @@ export default function Settings({
   const inputCls =
     'mt-1 w-full rounded-md border border-white/[0.16] bg-white/[0.06] px-3 py-2 text-sm text-slate-100 placeholder:text-slate-400 focus:border-accent focus:outline-none'
   const labelCls = 'block text-xs font-medium text-slate-400'
+  const aiPreset = aiProviderPreset(fields.aiProvider)
+  const keySaved = !!masked?.AI_API_KEY
+  const keyBelongsToSelected = keySaved && masked?.AI_PROVIDER === fields.aiProvider
 
   return (
     <div className="space-y-6">
@@ -359,36 +438,75 @@ export default function Settings({
       </Card>
 
       <Card className="space-y-4">
-        <h3 className="text-sm font-semibold text-slate-200">DeepSeek AI</h3>
+        <div>
+          <h3 className="text-sm font-semibold text-slate-200">AI advisor</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            Use the provider you already have — DeepSeek, ChatGPT (OpenAI), Claude or Gemini. Any OpenAI-compatible
+            endpoint works too.
+          </p>
+        </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className={labelCls}>
+            Provider
+            <select
+              value={fields.aiProvider}
+              onChange={(e) => chooseAiProvider(e.target.value)}
+              className={inputCls}
+            >
+              {AI_PROVIDERS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className={labelCls}>
             API key
             <input
-              value={secrets.deepseekKey}
-              onChange={(e) => setSecrets({ ...secrets, deepseekKey: e.target.value })}
-              placeholder={masked?.DEEPSEEK_API_KEY || 'sk-…'}
+              type="password"
+              value={secrets.aiKey}
+              onChange={(e) => setSecrets({ ...secrets, aiKey: e.target.value })}
+              placeholder={keyBelongsToSelected ? 'Saved — leave blank to keep' : aiPreset.keyPlaceholder}
               className={inputCls}
+              autoComplete="off"
             />
           </label>
           <label className={labelCls}>
             Model
-            <select
+            <input
+              list="ai-model-options"
               value={fields.model}
               onChange={(e) => setFields({ ...fields, model: e.target.value })}
+              placeholder={aiPreset.models[0]?.id || 'model id'}
               className={inputCls}
-            >
-              <option value="deepseek-chat">deepseek-chat (fast)</option>
-              <option value="deepseek-reasoner">deepseek-reasoner (deep reasoning)</option>
-            </select>
+            />
+            <datalist id="ai-model-options">
+              {aiPreset.models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </datalist>
           </label>
-          <label className={`${labelCls} sm:col-span-2`}>
+          <label className={labelCls}>
             Base URL
             <input
               value={fields.baseUrl}
               onChange={(e) => setFields({ ...fields, baseUrl: e.target.value })}
+              placeholder={aiPreset.baseUrl || 'https://…/v1'}
               className={inputCls}
             />
           </label>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <Button variant="secondary" onClick={testAi} disabled={saving}>
+            Test connection
+          </Button>
+          <span className="text-xs text-slate-500">
+            Saves the fields above, then checks the key. Create a key at{' '}
+            <span className="text-accent">{aiPreset.keyHint}</span>.
+            {keySaved && !keyBelongsToSelected ? ' The saved key belongs to a different provider.' : ''}
+          </span>
         </div>
       </Card>
 
@@ -721,22 +839,45 @@ export default function Settings({
       </Card>
 
       <Card className="space-y-4">
-        <h3 className="text-sm font-semibold text-slate-200">Data &amp; backups</h3>
-        <p className="text-xs text-slate-500">
-          A snapshot of the database is taken automatically each day (the last 7 are kept). Restoring replaces the
-          current data and restarts FinanceBot.
-        </p>
+        <div>
+          <h3 className="text-sm font-semibold text-slate-200">Data &amp; backups</h3>
+          <p className="mt-1 text-xs text-slate-500">
+            Every day FinanceBot saves a full snapshot — budgets, memories, settings, accounts and transactions — to the
+            folder below. The last 7 daily snapshots are kept.
+          </p>
+        </div>
+
+        <div className="rounded-xl border border-white/[0.12] bg-white/[0.04] p-3">
+          <p className="text-[11px] uppercase tracking-wide text-slate-500">Backup folder</p>
+          <p className="mt-1 break-all font-mono text-xs text-slate-200">{backupDir?.dir ?? 'Loading…'}</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <Button variant="secondary" onClick={chooseBackupFolder}>
+              Change folder…
+            </Button>
+            <Button variant="secondary" onClick={openBackupFolder}>
+              Open folder
+            </Button>
+          </div>
+        </div>
+
         <div className="flex flex-wrap gap-2">
           <Button variant="secondary" onClick={backupNow} disabled={backupBusy}>
-            {backupBusy ? 'Backing up…' : 'Back up now'}
+            {backupBusy ? 'Working…' : 'Back up now'}
+          </Button>
+          <Button variant="secondary" onClick={importBackupFile} disabled={backupBusy}>
+            Import backup file…
           </Button>
           <Button variant="secondary" onClick={exportCsv}>
             Export transactions CSV
           </Button>
         </div>
+        <p className="text-xs text-slate-500">
+          Importing copies a backup file into this folder; press Restore on it to switch to that data. Restoring saves a
+          snapshot of your current data first, then restarts FinanceBot — so a mistaken restore can be undone.
+        </p>
         {backupNotice && <p className="text-xs text-accent">{backupNotice}</p>}
         {backups.length === 0 ? (
-          <p className="text-xs text-slate-500">No backups yet.</p>
+          <p className="text-xs text-slate-500">No backups yet — one is created automatically each day.</p>
         ) : (
           <ul className="divide-y divide-white/[0.08]">
             {backups.map((b) => (

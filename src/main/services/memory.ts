@@ -1,4 +1,5 @@
 import { getDb } from '../db'
+import { isAiConfigured } from './ai-config'
 import { getSetting, setSetting } from './settings'
 import { recordFail, recordOk } from './health'
 import { quickChat } from './llm'
@@ -383,7 +384,7 @@ export async function distillMemories(force = false): Promise<number> {
 /** Distil periodically so memory keeps up without the user asking. */
 export function startMemoryScheduler(): NodeJS.Timeout {
   const run = (): void => {
-    if (!getSetting('DEEPSEEK_API_KEY')) return
+    if (!isAiConfigured()) return
     distillMemories()
       .then(() => recordOk('memory'))
       .catch((e) => recordFail('memory', e))

@@ -193,6 +193,19 @@ export interface BackupInfo {
   sizeBytes: number
 }
 
+export interface BackupDirInfo {
+  dir: string
+  isCustom: boolean
+}
+
+export interface BackupImportResult {
+  canceled: boolean
+  file?: BackupInfo
+  transactions?: number
+  accounts?: number
+  error?: string
+}
+
 export interface Subscription {
   id: number
   key: string

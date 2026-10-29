@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ChatMessage } from '@shared/types'
+import { aiProviderPreset } from '@shared/ai-providers'
 
 export default function ChatSidebar({ onDataChanged }: { onDataChanged: () => void }): JSX.Element {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
   const [streaming, setStreaming] = useState('')
   const [reasoning, setReasoning] = useState('')
+  const [providerLabel, setProviderLabel] = useState('AI advisor')
   const [toolActions, setToolActions] = useState<
     Array<{ name: string; summary: string; actionId?: number; undone?: boolean }>
   >([])
@@ -15,6 +17,10 @@ export default function ChatSidebar({ onDataChanged }: { onDataChanged: () => vo
 
   useEffect(() => {
     window.api.getChatHistory().then(setMessages)
+    window.api
+      .getMaskedSettings()
+      .then((m) => setProviderLabel(aiProviderPreset(m.AI_PROVIDER).label))
+      .catch(() => {})
   }, [])
 
   useEffect(() => {
@@ -121,7 +127,7 @@ export default function ChatSidebar({ onDataChanged }: { onDataChanged: () => vo
           </div>
           <div>
             <p className="text-sm font-semibold text-slate-100">AI Advisor</p>
-            <p className="text-[10px] text-slate-500">DeepSeek · reads your data</p>
+            <p className="text-[10px] text-slate-500">{providerLabel} · reads your data</p>
           </div>
         </div>
         <div className="flex items-center gap-1">
