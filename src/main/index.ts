@@ -12,8 +12,10 @@ import { startMemoryScheduler } from './services/memory'
 import { startSyncScheduler } from './services/sync-scheduler'
 import { startBackupScheduler } from './services/backup'
 import { startUpdateScheduler } from './services/updater'
+import { startDealScheduler, getDealsReport, refreshDealPrices } from './services/deals'
 import { runAiEvals } from './services/ai-eval'
 import { migrateSecrets } from './services/settings'
+import { getSetting, setSetting } from './services/settings'
 import { persistCycleHistory } from './services/history'
 import { buildCashFlowForecast } from './services/forecast'
 import { listGroups, listCategoryDestinations } from './services/groups'
@@ -21,6 +23,7 @@ import { refreshReviews, listReviews } from './services/reviews'
 import { getHealth } from './services/health'
 import { computeBudgetStatus } from './services/budget'
 import { currentCycleRange } from './services/cycle'
+import { refreshAiAlerts } from './services/ai-alerts'
 import { executeTool } from './services/tools'
 import { undoAction } from './services/ai-actions'
 
@@ -30,6 +33,10 @@ loadEnv({ path: resolve(process.cwd(), '.env') })
 let mainWindow: BrowserWindow | null = null
 
 function createWindow(): void {
+  const icon = app.isPackaged
+    ? join(process.resourcesPath, 'icon.png')
+    : join(app.getAppPath(), 'build', 'icon.png')
+
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -39,6 +46,7 @@ function createWindow(): void {
     autoHideMenuBar: true,
     backgroundColor: '#07090f',
     title: 'FinanceBot',
+    icon,
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -65,6 +73,29 @@ interface AuditStep {
   step: string
   ok: boolean
   detail: string
+}
+
+/**
+ * Existing installs predate the setup wizard, so opening 0.4.0 for the first
+ * time must not dump a long-time user into a first-run flow. If the database
+ * already has data (or credentials came from `.env`), mark onboarding complete
+ * silently. A genuinely fresh database is left for the wizard.
+ */
+function completeOnboardingForExistingInstall(): void {
+  if (getSetting('ONBOARDING_COMPLETED')) return
+  const db = getDb()
+  const alreadyUsed =
+    (db.prepare('SELECT COUNT(*) AS n FROM accounts').get() as { n: number }).n > 0 ||
+    (db.prepare('SELECT COUNT(*) AS n FROM transactions').get() as { n: number }).n > 0 ||
+    (db.prepare('SELECT COUNT(*) AS n FROM categories').get() as { n: number }).n > 0 ||
+    (db.prepare("SELECT COUNT(*) AS n FROM settings WHERE key NOT LIKE 'ONBOARDING%'").get() as { n: number }).n > 0 ||
+    !!process.env.AKAHU_APP_TOKEN ||
+    !!process.env.DEEPSEEK_API_KEY
+  if (alreadyUsed) {
+    setSetting('ONBOARDING_COMPLETED', '1')
+    setSetting('ONBOARDING_STEP', '')
+    console.log('Existing install detected: setup assistant will not run.')
+  }
 }
 
 /**
@@ -131,8 +162,11 @@ async function selfTestAudit(): Promise<{ ok: boolean; steps: AuditStep[] }> {
 // Discord replies, duplicate reminders). Only one instance may run.
 const RUN_EVALS = process.argv.includes('--run-evals')
 const PRINT_FORECAST = process.argv.includes('--print-forecast')
+const PRINT_DEALS = process.argv.includes('--print-deals')
+const REFRESH_DEALS = process.argv.includes('--refresh-deals')
 const SELF_TEST_AUDIT = process.argv.includes('--self-test-audit')
-const gotLock = RUN_EVALS || PRINT_FORECAST || SELF_TEST_AUDIT ? true : app.requestSingleInstanceLock()
+const PRINT_AI_ALERTS = process.argv.includes('--print-ai-alerts')
+const gotLock = RUN_EVALS || PRINT_FORECAST || PRINT_DEALS || REFRESH_DEALS || SELF_TEST_AUDIT || PRINT_AI_ALERTS ? true : app.requestSingleInstanceLock()
 
 if (!gotLock) {
   app.quit()
@@ -149,7 +183,9 @@ if (!gotLock) {
     // Initialise the DB (schema + migration) before anything else touches it.
     getDb()
     migrateSecrets()
+    completeOnboardingForExistingInstall()
     persistCycleHistory()
+    app.setAppUserModelId('nz.financebot.app')
 
     // Headless AI regression run: `financebot --run-evals`.
     if (RUN_EVALS) {
@@ -187,12 +223,28 @@ if (!gotLock) {
       return
     }
 
+    // Headless deal catalogue dump: `--print-deals`, or re-fetch the retailer
+    // pages first with `--refresh-deals`.
+    if (PRINT_DEALS || REFRESH_DEALS) {
+      const report = REFRESH_DEALS ? await refreshDealPrices() : getDealsReport()
+      process.stdout.write(JSON.stringify(report, null, 2) + '\n', () => app.exit(0))
+      return
+    }
+
     // End-to-end check of the AI write audit trail and undo: creates a
     // throwaway category and memory, undoes both, then cleans up.
     if (SELF_TEST_AUDIT) {
       const result = await selfTestAudit()
       console.log(JSON.stringify(result, null, 2))
       app.exit(result.ok ? 0 : 1)
+      return
+    }
+
+    // Headless AI insight dump: `--print-ai-alerts`.
+    if (PRINT_AI_ALERTS) {
+      const feed = refreshAiAlerts()
+      console.log(JSON.stringify(feed, null, 2))
+      app.exit(0)
       return
     }
 
@@ -205,6 +257,7 @@ if (!gotLock) {
     startSyncScheduler()
     startBackupScheduler()
     startUpdateScheduler()
+    startDealScheduler()
 
     createWindow()
 

@@ -9,8 +9,15 @@ import type {
   UpdateStatus
 } from '@shared/types'
 import { Button, Card, SectionHeader } from './ui'
+import { getStoredTheme, setTheme, THEMES, type ThemeId } from '../lib/theme'
 
-export default function Settings({ onChanged }: { onChanged: () => void }): JSX.Element {
+export default function Settings({
+  onChanged,
+  onRestartSetup
+}: {
+  onChanged: () => void
+  onRestartSetup?: () => void
+}): JSX.Element {
   const [masked, setMasked] = useState<SettingsMap | null>(null)
   const [secrets, setSecrets] = useState({ akahuApp: '', akahuUser: '', deepseekKey: '' })
   const [fields, setFields] = useState({
@@ -30,6 +37,7 @@ export default function Settings({ onChanged }: { onChanged: () => void }): JSX.
     autoSyncHours: '',
     useThreads: '1',
     updateFeed: '',
+    updateFeedUrl: '',
     autoUpdate: '1',
     autoUpdateDownload: '1'
   })
@@ -46,6 +54,7 @@ export default function Settings({ onChanged }: { onChanged: () => void }): JSX.
   const [health, setHealth] = useState<ServiceHealth[]>([])
   const [evalReport, setEvalReport] = useState<EvalReport | null>(null)
   const [evalBusy, setEvalBusy] = useState(false)
+  const [theme, setThemeState] = useState<ThemeId>(getStoredTheme)
 
   const loadBackups = async (): Promise<void> => setBackups(await window.api.listBackups())
 
@@ -70,6 +79,7 @@ export default function Settings({ onChanged }: { onChanged: () => void }): JSX.
         autoSyncHours: m.AUTO_SYNC_HOURS ?? '4',
         useThreads: m.DISCORD_USE_THREADS === '0' ? '0' : '1',
         updateFeed: m.UPDATE_FEED_PATH ?? '',
+        updateFeedUrl: m.UPDATE_FEED_URL ?? '',
         autoUpdate: m.AUTO_UPDATE === '0' ? '0' : '1',
         autoUpdateDownload: m.AUTO_UPDATE_DOWNLOAD === '0' ? '0' : '1'
       })
@@ -105,6 +115,7 @@ export default function Settings({ onChanged }: { onChanged: () => void }): JSX.
     sets.push(['AUTO_SYNC_HOURS', fields.autoSyncHours.trim() || '4'])
     sets.push(['DISCORD_USE_THREADS', fields.useThreads === '0' ? '0' : '1'])
     sets.push(['UPDATE_FEED_PATH', fields.updateFeed.trim()])
+    sets.push(['UPDATE_FEED_URL', fields.updateFeedUrl.trim()])
     sets.push(['AUTO_UPDATE', fields.autoUpdate === '0' ? '0' : '1'])
     sets.push(['AUTO_UPDATE_DOWNLOAD', fields.autoUpdateDownload === '0' ? '0' : '1'])
 
@@ -192,6 +203,12 @@ export default function Settings({ onChanged }: { onChanged: () => void }): JSX.
     }
   }
 
+  const chooseTheme = (id: ThemeId): void => {
+    setThemeState(id)
+    setTheme(id)
+    setNotice('Theme updated.')
+  }
+
   const updateLabel = (s: UpdateStatus | null): string => {
     if (!s) return 'Not checked yet.'
     switch (s.state) {
@@ -222,7 +239,96 @@ export default function Settings({ onChanged }: { onChanged: () => void }): JSX.
 
   return (
     <div className="space-y-6">
-      <SectionHeader title="Settings" subtitle="API keys, alert tuning and integrations." />
+      <SectionHeader title="Settings" subtitle="Appearance, API keys, alert tuning and integrations." />
+
+      <Card className="space-y-4">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-200">Appearance</h3>
+          <p className="mt-0.5 text-xs text-slate-500">
+            Pick a palette — it applies immediately and is remembered on this machine.
+          </p>
+        </div>
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+          {THEMES.map((t) => {
+            const active = theme === t.id
+            return (
+              <button
+                key={t.id}
+                onClick={() => chooseTheme(t.id)}
+                aria-pressed={active}
+                className={`rounded-2xl border p-3 text-left transition-all ${
+                  active
+                    ? 'border-accent/60 bg-accent/[0.08] ring-2 ring-accent/25'
+                    : 'border-white/[0.12] bg-white/[0.03] hover:border-white/[0.24] hover:bg-white/[0.06]'
+                }`}
+              >
+                <span
+                  className="relative flex h-20 w-full overflow-hidden rounded-xl border"
+                  style={{ background: t.preview.background, borderColor: t.preview.border }}
+                >
+                  <span
+                    className="absolute left-3 top-4 flex h-[62px] w-[52%] flex-col justify-end gap-1 rounded-lg border p-2"
+                    style={{ background: t.preview.glass, borderColor: t.preview.border }}
+                  >
+                    <span className="h-1.5 w-8 rounded-full" style={{ background: t.preview.accent }} />
+                    <span
+                      className="h-1 w-full rounded-full opacity-60"
+                      style={{ background: t.preview.text }}
+                    />
+                    <span
+                      className="h-1 w-3/4 rounded-full opacity-40"
+                      style={{ background: t.preview.text }}
+                    />
+                  </span>
+                  <span
+                    className="absolute right-3 top-3 h-7 w-7 rounded-full"
+                    style={{ background: t.preview.accent, boxShadow: `0 0 18px ${t.preview.accent}` }}
+                  />
+                  <span
+                    className="absolute bottom-3 right-3 text-[13px] font-semibold"
+                    style={{ color: t.preview.text }}
+                  >
+                    Aa
+                  </span>
+                </span>
+                <span className="mt-3 flex items-center justify-between gap-2">
+                  <span className="text-sm font-medium text-slate-100">{t.name}</span>
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                      active ? 'bg-accent/15 text-accent' : 'text-slate-500'
+                    }`}
+                  >
+                    {active ? 'Active' : 'Select'}
+                  </span>
+                </span>
+                <span className="mt-1 block text-[11px] leading-snug text-slate-500">{t.description}</span>
+              </button>
+            )
+          })}
+        </div>
+      </Card>
+
+      <Card className="space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-200">Setup assistant</h3>
+            <p className="mt-0.5 text-xs text-slate-500">
+              Re-run the guided setup to connect a bank, add an AI key or change your pay cycle. Every step can be
+              skipped.
+            </p>
+          </div>
+          <Button
+            variant="secondary"
+            onClick={async () => {
+              await window.api.setSetting('ONBOARDING_COMPLETED', '0')
+              await window.api.setSetting('SETUP_CHECKLIST_HIDDEN', '')
+              onRestartSetup?.()
+            }}
+          >
+            Run setup again
+          </Button>
+        </div>
+      </Card>
 
       <Card className="space-y-4">
         <h3 className="text-sm font-semibold text-slate-200">Akahu (NZ Open Finance)</h3>
@@ -473,16 +579,25 @@ export default function Settings({ onChanged }: { onChanged: () => void }): JSX.
       <Card className="space-y-4">
         <h3 className="text-sm font-semibold text-slate-200">App updates</h3>
         <p className="text-xs text-slate-500">
-          Point this at the folder that <span className="text-accent">npm run release:win</span> publishes to (the
-          installer plus <span className="text-accent">update.json</span>). The app checks on launch and every 6 hours,
-          verifies the SHA-512, and asks before installing. Toggles take effect on restart.
+          By default updates come from the GitHub release feed baked into the app. The installer is SHA-512 verified and
+          never installed without your click. A folder overrides the URL (useful for local builds); changes apply on
+          restart.
         </p>
         <label className={labelCls}>
-          Update feed folder
+          Update feed URL
+          <input
+            value={fields.updateFeedUrl}
+            onChange={(e) => setFields({ ...fields, updateFeedUrl: e.target.value })}
+            placeholder="https://github.com/Grymm9/FinBot/releases/latest/download"
+            className={inputCls}
+          />
+        </label>
+        <label className={labelCls}>
+          Update feed folder (overrides the URL)
           <input
             value={fields.updateFeed}
             onChange={(e) => setFields({ ...fields, updateFeed: e.target.value })}
-            placeholder="C:\\Users\\diego\\FinanceBotFeed"
+            placeholder="C:\\Users\\you\\FinanceBotFeed"
             className={inputCls}
           />
         </label>
@@ -568,19 +683,30 @@ export default function Settings({ onChanged }: { onChanged: () => void }): JSX.
                 <span className="flex items-center gap-2 text-slate-200">
                   <span
                     className={`h-2 w-2 rounded-full ${
-                      h.status === 'ok'
-                        ? 'bg-accent'
-                        : h.status === 'warn'
-                          ? 'bg-warn'
-                          : h.status === 'fail'
-                            ? 'bg-danger'
-                            : 'bg-slate-600'
+                      !h.configured
+                        ? 'bg-slate-600'
+                        : h.status === 'ok'
+                          ? 'bg-accent'
+                          : h.status === 'warn'
+                            ? 'bg-warn'
+                            : h.status === 'fail'
+                              ? 'bg-danger'
+                              : 'bg-slate-600'
                     }`}
                   />
                   {h.label}
+                  {!h.configured && (
+                    <span className="rounded-full bg-white/[0.06] px-2 py-0.5 text-[10px] uppercase tracking-wide text-slate-500">
+                      not configured
+                    </span>
+                  )}
                 </span>
                 <span className="text-[11px] text-slate-500">
-                  {h.lastOk ? `OK ${new Date(h.lastOk).toLocaleString('en-NZ')}` : 'no successful run yet'}
+                  {!h.configured
+                    ? 'optional — set it up in Settings or the setup assistant'
+                    : h.lastOk
+                      ? `OK ${new Date(h.lastOk).toLocaleString('en-NZ')}`
+                      : 'no successful run yet'}
                 </span>
               </div>
               {h.lastError && (

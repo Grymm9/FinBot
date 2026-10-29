@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS categories (
   frequency   TEXT NOT NULL DEFAULT 'monthly',
   color       TEXT,
   split       INTEGER NOT NULL DEFAULT 0,
-  active_from TEXT
+  active_from TEXT,
+  updated_at  INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS budget_history (
@@ -312,6 +313,42 @@ CREATE TABLE IF NOT EXISTS ai_eval_runs (
   failed   INTEGER,
   detail   TEXT
 );
+
+CREATE TABLE IF NOT EXISTS deal_plans (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  category      TEXT NOT NULL,
+  provider      TEXT NOT NULL,
+  plan_name     TEXT NOT NULL,
+  monthly_price REAL,
+  variable_rate REAL,
+  daily_charge  REAL,
+  region        TEXT,
+  source_url    TEXT,
+  verified_at   INTEGER,
+  stale         INTEGER NOT NULL DEFAULT 0,
+  notes         TEXT,
+  active        INTEGER NOT NULL DEFAULT 1,
+  UNIQUE(category, provider, plan_name)
+);
+
+CREATE TABLE IF NOT EXISTS ai_alerts (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  dedupe_key      TEXT NOT NULL UNIQUE,
+  kind            TEXT NOT NULL,
+  severity        TEXT NOT NULL DEFAULT 'warn',
+  title           TEXT NOT NULL,
+  body            TEXT NOT NULL,
+  merchant        TEXT,
+  category        TEXT,
+  amount          REAL,
+  previous_amount REAL,
+  cycle_start     TEXT,
+  created_at      INTEGER,
+  updated_at      INTEGER,
+  read_at         INTEGER,
+  dismissed_at    INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_ai_alerts_active ON ai_alerts(dismissed_at, read_at);
 `
 
 let _db: Database.Database | null = null
@@ -362,6 +399,9 @@ function migrate(db: Database.Database): void {
   }
   if (!catCols.some((c) => c.name === 'active_from')) {
     db.exec('ALTER TABLE categories ADD COLUMN active_from TEXT')
+  }
+  if (!catCols.some((c) => c.name === 'updated_at')) {
+    db.exec('ALTER TABLE categories ADD COLUMN updated_at INTEGER')
   }
 
   const groupCols = db.prepare('PRAGMA table_info(budget_groups)').all() as Array<{ name: string }>

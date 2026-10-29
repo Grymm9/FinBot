@@ -1,5 +1,6 @@
 import { getDb } from '../db'
 import { sendDiscordMessage } from './discord'
+import { getSetting } from './settings'
 import { todayLocalIso } from './dates'
 import type { HealthStatus, ServiceHealth } from '@shared/types'
 
@@ -21,7 +22,8 @@ export const SERVICE_LABELS: Record<string, string> = {
   reminders: 'Reminders',
   memory: 'Memory',
   backup: 'Backups',
-  update: 'App updates'
+  update: 'App updates',
+  deals: 'Deal checks'
 }
 
 export const TRACKED_SERVICES = Object.keys(SERVICE_LABELS)
@@ -60,6 +62,25 @@ function statusFor(lastOk: number | null, failures: number): HealthStatus {
   return 'ok'
 }
 
+/**
+ * Whether the service has everything it needs to run. Users can skip optional
+ * integrations in setup, so "no credentials" must not look like a failure.
+ */
+export function isServiceConfigured(service: string): boolean {
+  switch (service) {
+    case 'sync':
+      return !!getSetting('AKAHU_APP_TOKEN') && !!getSetting('AKAHU_USER_TOKEN')
+    case 'email':
+      return !!getSetting('EMAIL_ADDRESS') && !!getSetting('EMAIL_PASSWORD')
+    case 'discord':
+      return !!getSetting('DISCORD_BOT_TOKEN') && !!getSetting('DISCORD_CHANNEL_ID')
+    case 'memory':
+      return !!getSetting('DEEPSEEK_API_KEY')
+    default:
+      return true
+  }
+}
+
 export function getHealth(): ServiceHealth[] {
   const rows = getDb()
     .prepare('SELECT service, last_ok, last_error, last_error_at, consecutive_failures FROM service_health')
@@ -83,7 +104,8 @@ export function getHealth(): ServiceHealth[] {
       lastOk,
       lastError: r?.last_error ?? null,
       lastErrorAt: r?.last_error_at ?? null,
-      failures
+      failures,
+      configured: isServiceConfigured(service)
     }
   })
 }

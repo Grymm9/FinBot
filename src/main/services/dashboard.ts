@@ -10,8 +10,10 @@ import { detectInsights } from './insights'
 import { getHealth } from './health'
 import { buildCashFlowForecast } from './forecast'
 import { latestReview } from './reviews'
+import { refreshAiAlerts } from './ai-alerts'
 import type {
   Account,
+  AiAlertFeed,
   BalanceInfo,
   CashFlowPoint,
   DashboardSummary,
@@ -82,6 +84,7 @@ export function getDashboardSummary(): DashboardSummary {
   const endExclusive = parseLocalDate(cycle.end)
   endExclusive.setDate(endExclusive.getDate() - 1)
   const cycleRange = `${cycle.label} – ${cycleLabel(endExclusive)}`
+  const ai = safeAiAlerts()
 
   return {
     accounts: listAccounts(),
@@ -102,7 +105,19 @@ export function getDashboardSummary(): DashboardSummary {
     timeZone: detectTimeZone(),
     health: getHealth(),
     forecast: safeForecast(cycle.end),
-    review: safeReview()
+    review: safeReview(),
+    aiAlerts: ai.alerts,
+    aiUnread: ai.unread
+  }
+}
+
+/** AI alerts must never stop the Dashboard from rendering. */
+function safeAiAlerts(): AiAlertFeed {
+  try {
+    return refreshAiAlerts()
+  } catch (e) {
+    console.error('AI alert refresh failed:', e)
+    return { alerts: [], unread: 0 }
   }
 }
 

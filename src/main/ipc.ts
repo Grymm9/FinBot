@@ -1,7 +1,8 @@
-import { ipcMain, dialog, BrowserWindow } from 'electron'
+import { ipcMain, dialog, BrowserWindow, shell, app } from 'electron'
 import { readFile } from 'node:fs/promises'
 import { getDb } from './db'
 import { syncAll } from './services/akahu'
+import { importTransactionsCsv } from './services/tx-import'
 import { importBudgetCsv, importBudgetOcr, listCategories, setCategoryBudget, setCategorySplit, setCategoryActiveFrom, deleteCategory, clearCategories, listRules, addRule, removeRule, listUnmatchedMerchants, listCardMappings, setCardMapping, removeCardMapping } from './services/budget'
 import { recognizeImage } from './services/ocr'
 import {
@@ -38,6 +39,12 @@ import { notifyUncategorized, processDiscordReplies } from './services/discord-r
 import { scanEmails, listEmails, setEmailRelevant } from './services/email'
 import { checkAndAlert, evaluateBudget } from './services/alerts'
 import { dismissAlert } from './services/notifications'
+import {
+  getAiAlertFeed,
+  refreshAiAlerts,
+  markAiAlertRead,
+  dismissAiAlert
+} from './services/ai-alerts'
 import { listUserReminders, createUserReminder, deleteUserReminder } from './services/reminders'
 import { searchTransactions } from './services/transactions'
 import {
@@ -56,8 +63,17 @@ import { listReviews, latestReview } from './services/reviews'
 import { listActions, undoAction } from './services/ai-actions'
 import { runAiEvals, lastEvalRun } from './services/ai-eval'
 import { checkForUpdate, getUpdateStatus, installUpdate } from './services/updater'
+import {
+  addDealPlan,
+  compareLink,
+  deleteDealPlan,
+  getDealsReport,
+  refreshDealPrices,
+  setPowerUsage
+} from './services/deals'
 import { buildFinancialContext } from './services/context'
-import { streamChat, baseSystemPrompt } from './services/deepseek'
+import { streamChat, baseSystemPrompt, testAiConnection } from './services/deepseek'
+import { currentCycleRange } from './services/cycle'
 import {
   listMemories,
   createMemory,
@@ -70,7 +86,7 @@ import {
   memoryBlock,
   recordConversation
 } from './services/memory'
-import type { ChatMessage } from '@shared/types'
+import type { ChatMessage, DealCategory, DealPlanInput } from '@shared/types'
 
 const CSV_FILTERS = [{ name: 'CSV files', extensions: ['csv'] }]
 const PDF_FILTERS = [{ name: 'PDF files', extensions: ['pdf'] }]
@@ -113,6 +129,7 @@ export function registerIpcHandlers(): void {
       AUTO_SYNC_HOURS: getSetting('AUTO_SYNC_HOURS', '4'),
       DISCORD_USE_THREADS: getSetting('DISCORD_USE_THREADS', '1'),
       UPDATE_FEED_PATH: getSetting('UPDATE_FEED_PATH', ''),
+      UPDATE_FEED_URL: getSetting('UPDATE_FEED_URL', ''),
       AUTO_UPDATE: getSetting('AUTO_UPDATE', '1'),
       AUTO_UPDATE_DOWNLOAD: getSetting('AUTO_UPDATE_DOWNLOAD', '1'),
       LOW_BALANCE_BUFFER: getSetting('LOW_BALANCE_BUFFER', '50'),
@@ -131,6 +148,21 @@ export function registerIpcHandlers(): void {
   })
   ipcMain.handle('bank:status', () => getBankStatus())
   ipcMain.handle('transactions:list', (_e, limit?: number) => listTransactions(limit ?? 200))
+  ipcMain.handle('transactions:import-csv', async (_e, accountName?: string) => {
+    const win = BrowserWindow.getFocusedWindow()
+    const res = await dialog.showOpenDialog(win!, {
+      properties: ['openFile'],
+      filters: CSV_FILTERS
+    })
+    if (res.canceled || res.filePaths.length === 0) return { canceled: true }
+    const text = await readFile(res.filePaths[0], 'utf-8')
+    return {
+      canceled: false,
+      fileName: res.filePaths[0].split(/[\\/]/).pop() ?? null,
+      ...importTransactionsCsv(text, { accountName, fileName: res.filePaths[0] })
+    }
+  })
+  ipcMain.handle('cycle:current', () => currentCycleRange())
 
   // ------------------------------------------------------------------- budget
   ipcMain.handle('budget:import-csv', async () => {
@@ -319,6 +351,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('alerts:run', () => checkAndAlert())
   ipcMain.handle('alerts:preview', () => ({ flags: evaluateBudget() }))
   ipcMain.handle('notifications:dismiss', (_e, key: string) => dismissAlert(key))
+  ipcMain.handle('ai-alerts:list', () => getAiAlertFeed())
+  ipcMain.handle('ai-alerts:refresh', () => refreshAiAlerts())
+  ipcMain.handle('ai-alerts:read', (_e, id: number) => markAiAlertRead(id))
+  ipcMain.handle('ai-alerts:dismiss', (_e, id: number) => dismissAiAlert(id))
   ipcMain.handle('reminders:list', () => listUserReminders())
   ipcMain.handle('reminders:create', (_e, message: string, targetDate: string, repeat: string) =>
     createUserReminder(message, targetDate, repeat)
@@ -394,6 +430,16 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('reviews:list', (_e, limit?: number) => listReviews(limit ?? 6))
   ipcMain.handle('reviews:latest', () => latestReview())
 
+  // ------------------------------------------------------------------- deals
+  ipcMain.handle('deals:report', () => getDealsReport())
+  ipcMain.handle('deals:refresh', () => refreshDealPrices())
+  ipcMain.handle('deals:add-plan', (_e, input: DealPlanInput) => addDealPlan(input))
+  ipcMain.handle('deals:delete-plan', (_e, id: number) => deleteDealPlan(id))
+  ipcMain.handle('deals:set-usage', (_e, kwh: number) => setPowerUsage(kwh))
+  ipcMain.handle('deals:open-compare', async (_e, category: DealCategory) => {
+    await shell.openExternal(compareLink(category).url)
+  })
+
   // -------------------------------------------------------------- ai actions
   ipcMain.handle('ai:actions', (_e, limit?: number) => listActions(limit ?? 30))
   ipcMain.handle('ai:undo', (_e, id: number) => undoAction(id))
@@ -438,6 +484,18 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('memory:distill', async (_e, force?: boolean) => ({
     added: await distillMemories(force === true)
   }))
+
+  ipcMain.handle('ai:test', () => testAiConnection())
+
+  // ------------------------------------------------------------- app / setup
+  ipcMain.handle('app:launch-at-login', () => app.getLoginItemSettings().openAtLogin)
+  ipcMain.handle('app:set-launch-at-login', (_e, enabled: boolean) => {
+    if (app.isPackaged) {
+      app.setLoginItemSettings({ openAtLogin: enabled, path: process.execPath })
+    }
+    setSetting('LAUNCH_AT_LOGIN', enabled ? '1' : '0')
+    return enabled
+  })
 
   ipcMain.on('chat:send', async (event, userText: string) => {
     recordConversation('app', 'user', userText)

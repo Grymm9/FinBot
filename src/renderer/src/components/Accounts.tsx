@@ -52,8 +52,8 @@ export default function Accounts({ onChanged }: { onChanged: () => void }): JSX.
                     title={a.enabled ? 'Included — click to exclude' : 'Excluded — click to include'}
                   >
                     <span
-                      className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                        a.enabled ? 'translate-x-5' : 'translate-x-0.5'
+                      className={`absolute left-0.5 top-0.5 h-5 w-5 rounded-full bg-[#fff] shadow-sm transition-transform ${
+                        a.enabled ? 'translate-x-[20px]' : 'translate-x-0'
                       }`}
                     />
                   </button>

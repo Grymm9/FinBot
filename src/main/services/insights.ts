@@ -119,12 +119,13 @@ function insuranceRenewals(): Insight[] {
     if (days < 0 || days > 30) continue
     const name = p.provider ?? p.coverType ?? 'Insurance policy'
     const premiumBit = p.premium ? ` · $${p.premium.toFixed(2)} ${p.frequency ?? ''}`.trimEnd() : ''
+    const reviewBit = days <= 7 ? ' · review and compare cover before it auto-renews' : ''
     out.push({
       key: `renewal:${p.id}:${p.renewalDate}`,
       type: 'insurance_renewal',
       severity: days <= 7 ? 'bad' : 'warn',
       title: `${name} renews in ${days === 0 ? 'today' : `${days} day${days === 1 ? '' : 's'}`}`,
-      detail: `${p.coverType ? p.coverType + ' · ' : ''}renews ${p.renewalDate}${premiumBit}`,
+      detail: `${p.coverType ? p.coverType + ' · ' : ''}renews ${p.renewalDate}${premiumBit}${reviewBit}`,
       date: p.renewalDate
     })
   }

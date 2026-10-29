@@ -28,13 +28,18 @@ import type {
   Settings,
   SyncResult,
   Transaction,
+  TransactionImportResult,
   UnmatchedMerchant,
   ServiceHealth,
   ForecastSummary,
   CycleReview,
   AiAction,
+  AiAlertFeed,
   EvalReport,
-  UpdateStatus
+  UpdateStatus,
+  DealCategory,
+  DealPlanInput,
+  DealsReport
 } from '@shared/types'
 
 declare global {
@@ -168,6 +173,10 @@ declare global {
       runBudgetCheck: () => Promise<AlertResult>
       previewAlerts: () => Promise<{ flags: AlertResult['flags'] }>
       dismissAlert: (key: string) => Promise<void>
+      listAiAlerts: () => Promise<AiAlertFeed>
+      refreshAiAlerts: () => Promise<AiAlertFeed>
+      markAiAlertRead: (id: number) => Promise<AiAlertFeed>
+      dismissAiAlert: (id: number) => Promise<AiAlertFeed>
       listUserReminders: () => Promise<Reminder[]>
       createUserReminder: (message: string, targetDate: string, repeat: string) => Promise<Reminder[]>
       deleteUserReminder: (id: number) => Promise<Reminder[]>
@@ -191,6 +200,9 @@ declare global {
         to?: string
         limit?: number
       }) => Promise<TransactionSearchResult>
+      importTransactionsCsv: (
+        accountName?: string
+      ) => Promise<{ canceled: boolean; fileName?: string | null } & Partial<TransactionImportResult>>
 
       listSubscriptions: () => Promise<{ items: Subscription[]; monthlyTotal: number }>
       refreshSubscriptions: () => Promise<{ items: Subscription[]; monthlyTotal: number }>
@@ -223,10 +235,22 @@ declare global {
       listReviews: (limit?: number) => Promise<CycleReview[]>
       latestReview: () => Promise<CycleReview | null>
 
+      getDeals: () => Promise<DealsReport>
+      refreshDeals: () => Promise<DealsReport>
+      addDealPlan: (input: DealPlanInput) => Promise<DealsReport>
+      deleteDealPlan: (id: number) => Promise<DealsReport>
+      setPowerUsage: (kwh: number) => Promise<DealsReport>
+      openDealCompare: (category: DealCategory) => Promise<void>
+
       listAiActions: (limit?: number) => Promise<AiAction[]>
       undoAiAction: (id: number) => Promise<{ ok: boolean; message: string }>
       runAiEvals: () => Promise<EvalReport>
       lastAiEval: () => Promise<EvalReport | null>
+      testAi: () => Promise<{ ok: boolean; message: string }>
+
+      getCurrentCycle: () => Promise<{ start: string; end: string; label: string }>
+      getLaunchAtLogin: () => Promise<boolean>
+      setLaunchAtLogin: (enabled: boolean) => Promise<boolean>
 
       getUpdateStatus: () => Promise<UpdateStatus>
       checkForUpdate: () => Promise<UpdateStatus>

@@ -54,7 +54,7 @@ function median(values: number[]): number {
   return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2
 }
 
-function merchantKey(merchant: string | null, description: string): string {
+export function merchantKey(merchant: string | null, description: string): string {
   const base = (merchant ?? '').trim() || description.replace(/^card\s+\d{3,4}\s*/i, '')
   return base
     .toLowerCase()
@@ -64,13 +64,13 @@ function merchantKey(merchant: string | null, description: string): string {
     .trim()
 }
 
-function displayName(merchant: string | null, description: string): string {
+export function displayName(merchant: string | null, description: string): string {
   if (merchant && merchant.trim()) return merchant.trim()
   return description.replace(/^card\s+\d{3,4}\s*/i, '').replace(/\s+/g, ' ').trim()
 }
 
 /** Map a median gap in days onto a cadence label, or null if irregular. */
-function classifyCadence(gap: number): string | null {
+export function classifyCadence(gap: number): string | null {
   if (gap >= 5 && gap <= 9) return 'weekly'
   if (gap >= 12 && gap <= 16) return 'fortnightly'
   if (gap >= 26 && gap <= 34) return 'monthly'

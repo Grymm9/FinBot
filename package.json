@@ -1,6 +1,6 @@
 {
   "name": "financebot",
-  "version": "0.1.0",
+  "version": "0.4.0",
   "description": "Local desktop financial management app with AI chat, Akahu bank sync, insurance auditing, and Discord alerts.",
   "author": "FinanceBot",
   "license": "MIT",
@@ -15,11 +15,13 @@
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
-    "test": "node --test test/dates.test.ts test/filters.test.ts test/cycle.test.ts test/reconcile.test.ts test/forecast.test.ts test/updater.test.ts",
+    "test": "node --test test/dates.test.ts test/filters.test.ts test/cycle.test.ts test/reconcile.test.ts test/forecast.test.ts test/updater.test.ts test/deals.test.ts test/ai-alerts.test.ts test/tx-csv.test.ts",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
     "package:win": "npm run build && electron-builder --win",
     "release:win": "npm run build && electron-builder --win && node scripts/make-update-manifest.mjs",
     "publish:win": "node scripts/make-update-manifest.mjs --publish",
+    "publish:github": "node scripts/publish-github.mjs",
+    "release:github": "npm run release:win && node scripts/publish-github.mjs",
     "eval:ai": "npm run build && electron . --run-evals"
   },
   "dependencies": {
@@ -65,12 +67,20 @@
       "!{.env,.env.example,.env.*,.npmrc}",
       "!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}",
       "!{tailwind.config.js,postcss.config.js}",
-      "!{README.md,.gitignore}"
+      "!{README.md,.gitignore}",
+      "!scripts/*"
     ],
     "npmRebuild": false,
     "win": {
-      "target": "nsis"
+      "target": "nsis",
+      "icon": "build/icon.ico"
     },
+    "extraResources": [
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
+      }
+    ],
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true,

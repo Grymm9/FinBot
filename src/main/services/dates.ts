@@ -19,6 +19,13 @@ export function todayLocalIso(): string {
   return localIsoDate(new Date())
 }
 
+/** Shift a date-only string by a whole number of local days. */
+export function addDaysIso(iso: string, days: number): string {
+  const d = parseLocalDate(iso)
+  d.setDate(d.getDate() + days)
+  return localIsoDate(d)
+}
+
 /** Parse a YYYY-MM-DD string as a LOCAL date (midnight), avoiding the UTC
  *  interpretation of `new Date('YYYY-MM-DD')`. */
 export function parseLocalDate(iso: string): Date {

@@ -18,6 +18,9 @@ export default function Transactions(): JSX.Element {
   const [loading, setLoading] = useState(false)
   const [expanded, setExpanded] = useState<string | null>(null)
   const [notice, setNotice] = useState('')
+  const [importAccount, setImportAccount] = useState('')
+  const [importNote, setImportNote] = useState('')
+  const [importing, setImporting] = useState(false)
 
   useEffect(() => {
     void window.api.listCategories().then(setCategories)
@@ -61,12 +64,62 @@ export default function Transactions(): JSX.Element {
     await search()
   }
 
+  const importStatement = async (): Promise<void> => {
+    setImporting(true)
+    setImportNote('')
+    try {
+      const r = await window.api.importTransactionsCsv(importAccount || undefined)
+      if (r.canceled) return
+      setImportNote(
+        (r.imported ?? 0) > 0
+          ? `Imported ${r.imported} transactions${r.dateFrom ? ` (${r.dateFrom} → ${r.dateTo})` : ''}. ${r.skipped ?? 0} rows skipped.`
+          : 'No new transactions — that statement may already be imported.'
+      )
+      setAccounts(await window.api.listAccounts())
+      await search()
+    } catch (e) {
+      setImportNote(`Import failed: ${(e as Error).message}`)
+    } finally {
+      setImporting(false)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <SectionHeader
         title="Transactions"
         subtitle="Search every real transaction, check the category it resolves to, and fix the rules."
       />
+
+      <Card className="space-y-3">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-semibold text-slate-200">Import a bank statement</h3>
+            <p className="mt-0.5 text-xs text-slate-500">
+              CSV export with date, description and amount columns. Re-importing the same file is safe.
+            </p>
+          </div>
+          <div className="flex flex-wrap items-end gap-2">
+            <label className="text-xs text-slate-400">
+              Account name (optional)
+              <input
+                value={importAccount}
+                onChange={(e) => setImportAccount(e.target.value)}
+                placeholder="e.g. Everyday account"
+                className={`${fieldCls} mt-1`}
+              />
+            </label>
+            <Button variant="secondary" onClick={importStatement} disabled={importing}>
+              {importing ? 'Importing…' : 'Import CSV'}
+            </Button>
+          </div>
+        </div>
+        {importNote && (
+          <p className={`text-xs ${importNote.startsWith('Import failed') ? 'text-danger' : 'text-accent'}`}>
+            {importNote}
+          </p>
+        )}
+      </Card>
 
       <Card className="space-y-3">
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-4">

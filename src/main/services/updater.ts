@@ -8,19 +8,33 @@ import { formatBytes, isNewer, parseManifest, sha512Hex, type UpdateManifest } f
 import type { UpdateStatus } from '@shared/types'
 
 /**
- * Local-feed auto-update.
+ * Auto-update from a local folder or an HTTPS feed.
  *
- * The app used to require: quit → `npm run package:win` → silent reinstall →
- * relaunch. Now `npm run release:win` publishes the installer plus an
- * `update.json` manifest to a folder, and the installed app finds it, verifies
- * the SHA-512, downloads it, and offers a one-click "Restart & install".
+ * `npm run release:github` publishes the installer plus an `update.json`
+ * manifest to a GitHub release; the installed app fetches the manifest over
+ * HTTPS, verifies the SHA-512, downloads the installer, and offers a one-click
+ * "Restart & install". A folder feed (the original design) still works for
+ * offline/network-share updates.
  *
- * A custom updater is deliberate: electron-updater needs an HTTP feed and this
- * app updates from a local/network folder. Install is never silent — the user
- * clicks restart, so an update can't interrupt a budget edit.
+ * Install is never silent — the user clicks restart, so an update can't
+ * interrupt a budget edit.
  */
 
 const MANIFEST_NAME = 'update.json'
+
+/**
+ * Where a fresh install looks for updates. GitHub serves the assets of the
+ * newest release under `/releases/latest/download/`, so this URL never changes
+ * between versions. Override with `UPDATE_FEED_URL` (or a folder path).
+ */
+const DEFAULT_FEED_URL = 'https://github.com/Grymm9/FinBot/releases/latest/download'
+
+interface FeedSource {
+  kind: 'dir' | 'url'
+  /** Folder path for `dir`, base URL (no trailing slash) for `url`. */
+  value: string
+}
+
 
 let status: UpdateStatus = {
   state: 'idle',
@@ -41,15 +55,49 @@ function currentVersion(): string {
   return app.getVersion()
 }
 
-/** Folder that holds `update.json` and the installer. */
+/**
+ * Resolve where updates come from. An explicit folder wins (useful for local
+ * builds), then an explicit URL, then the GitHub release feed baked into the
+ * app.
+ */
+export function feedSource(): FeedSource {
+  const configuredPath = getSetting('UPDATE_FEED_PATH', '').trim()
+  if (configuredPath) return { kind: 'dir', value: resolve(configuredPath) }
+
+  const configuredUrl = getSetting('UPDATE_FEED_URL', '').trim()
+  if (configuredUrl) return { kind: 'url', value: configuredUrl.replace(/\/+$/, '') }
+
+  return { kind: 'url', value: DEFAULT_FEED_URL }
+}
+
+/** Human-readable feed location for status messages. */
+export function feedLabel(): string {
+  const source = feedSource()
+  return source.kind === 'url' ? source.value : source.value
+}
+
+/** Folder that holds `update.json` and the installer (legacy folder feed). */
 export function feedDirectory(): string {
-  const configured = getSetting('UPDATE_FEED_PATH', '').trim()
-  if (configured) return resolve(configured)
-  return join(app.getPath('userData'), 'update-feed')
+  const source = feedSource()
+  return source.kind === 'dir' ? source.value : join(app.getPath('userData'), 'update-feed')
 }
 
 export function getUpdateStatus(): UpdateStatus {
   return { ...status, currentVersion: currentVersion() }
+}
+
+/** Read + validate `update.json` from whichever feed is configured. */
+async function loadManifest(source: FeedSource): Promise<UpdateManifest | null> {
+  if (source.kind === 'dir') {
+    return readManifest(source.value)
+  }
+  const url = `${source.value}/${MANIFEST_NAME}`
+  const res = await fetch(url, {
+    headers: { Accept: 'application/json', 'Cache-Control': 'no-cache' },
+    signal: AbortSignal.timeout(20_000)
+  })
+  if (!res.ok) throw new Error(`Update feed returned HTTP ${res.status}.`)
+  return parseManifest(await res.text())
 }
 
 async function readManifest(dir: string): Promise<UpdateManifest | null> {
@@ -76,26 +124,45 @@ export async function checkForUpdate(): Promise<UpdateStatus> {
       return getUpdateStatus()
     }
 
-    const dir = feedDirectory()
+    const source = feedSource()
     let manifest: UpdateManifest | null = null
-    try {
-      const st = await fs.stat(dir)
-      if (!st.isDirectory()) throw new Error(`${dir} is not a folder`)
-      manifest = await readManifest(dir)
-    } catch {
-      broadcast({
-        state: 'disabled',
-        currentVersion: currentVersion(),
-        message: `No update feed at ${dir}.`
-      })
-      return getUpdateStatus()
+
+    if (source.kind === 'dir') {
+      try {
+        const st = await fs.stat(source.value)
+        if (!st.isDirectory()) throw new Error(`${source.value} is not a folder`)
+        manifest = await readManifest(source.value)
+      } catch {
+        broadcast({
+          state: 'disabled',
+          currentVersion: currentVersion(),
+          message: `No update feed at ${source.value}.`
+        })
+        return getUpdateStatus()
+      }
+    } else {
+      try {
+        manifest = await loadManifest(source)
+      } catch (e) {
+        // Offline, blocked, or GitHub is down. Not a health failure: a laptop
+        // that is simply offline should not trigger "service failing" alerts.
+        broadcast({
+          state: 'disabled',
+          currentVersion: currentVersion(),
+          message: `Couldn't check ${source.value} (${(e as Error).message})`
+        })
+        return getUpdateStatus()
+      }
     }
 
     if (!manifest) {
       broadcast({
         state: 'disabled',
         currentVersion: currentVersion(),
-        message: `No valid ${MANIFEST_NAME} in ${dir}.`
+        message:
+          source.kind === 'dir'
+            ? `No valid ${MANIFEST_NAME} in ${source.value}.`
+            : `No valid ${MANIFEST_NAME} at ${source.value}.`
       })
       return getUpdateStatus()
     }
@@ -143,8 +210,8 @@ export async function checkForUpdate(): Promise<UpdateStatus> {
 }
 
 export async function downloadUpdate(): Promise<UpdateStatus> {
-  const dir = feedDirectory()
-  const manifest = await readManifest(dir)
+  const source = feedSource()
+  const manifest = await loadManifest(source).catch(() => null)
   if (!manifest) {
     broadcast({ state: 'error', currentVersion: currentVersion(), message: 'No update manifest found.' })
     return getUpdateStatus()
@@ -167,10 +234,13 @@ export async function downloadUpdate(): Promise<UpdateStatus> {
       progress: 0
     })
 
-    if (manifest.url) {
+    if (source.kind === 'url') {
+      const url = manifest.url ?? `${source.value}/${encodeURIComponent(manifest.file)}`
+      await downloadHttp(url, tmp, manifest)
+    } else if (manifest.url) {
       await downloadHttp(manifest.url, tmp, manifest)
     } else {
-      await fs.copyFile(join(dir, manifest.file), tmp)
+      await fs.copyFile(join(source.value, manifest.file), tmp)
       broadcast({
         state: 'downloading',
         currentVersion: currentVersion(),

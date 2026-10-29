@@ -9,7 +9,9 @@ import { todayLocalIso } from './dates'
 import { detectInsights } from './insights'
 import { persistCycleHistory } from './history'
 import { refreshSubscriptions } from './subscriptions'
+import { refreshAiAlerts } from './ai-alerts'
 import { refreshReviews } from './reviews'
+import { notifyInsuranceReviews } from './deals'
 import { track } from './health'
 import { syncIfStale } from './sync-scheduler'
 import type { AlertResult } from '@shared/types'
@@ -100,11 +102,13 @@ export function startScheduler(): NodeJS.Timeout {
       await syncIfStale(30)
       persistCycleHistory()
       refreshSubscriptions()
+      refreshAiAlerts()
       const alert = await checkAndAlert()
       if (alert.fired) logAlert(alert.message)
       await notifyMissedPayments()
       await notifyInsights()
       await notifyReviews()
+      await notifyInsuranceReviews()
       return true
     })
     if (result === null) console.error('Scheduled budget check failed — see Settings → Service health.')

@@ -20,6 +20,14 @@ const publish = publishIndex !== -1
 const feedArg = publish && args[publishIndex + 1] && !args[publishIndex + 1].startsWith('--') ? args[publishIndex + 1] : null
 const feedDir = feedArg ? resolve(feedArg) : process.env.FINANCEBOT_FEED ? resolve(process.env.FINANCEBOT_FEED) : null
 
+// GitHub releases need a URL that does not change between versions. `--stable`
+// publishes the installer as `FinanceBot-Setup.exe`; `--url-base` sets the
+// absolute download URL recorded in update.json.
+const stableIndex = args.indexOf('--stable')
+const useStableName = stableIndex !== -1
+const urlBaseIndex = args.indexOf('--url-base')
+const urlBase = urlBaseIndex !== -1 && args[urlBaseIndex + 1] ? args[urlBaseIndex + 1].replace(/\/+$/, '') : null
+
 const root = resolve(process.cwd())
 const releaseDir = join(root, 'release')
 const pkg = JSON.parse(readFileSync(join(root, 'package.json'), 'utf-8'))
@@ -29,8 +37,11 @@ if (!existsSync(releaseDir)) {
   process.exit(1)
 }
 
+const STABLE_NAME = 'FinanceBot-Setup.exe'
+
 const installers = readdirSync(releaseDir)
   .filter((f) => f.toLowerCase().endsWith('.exe') && !f.toLowerCase().includes('uninstaller'))
+  .filter((f) => f !== STABLE_NAME)
   .map((f) => ({ file: f, mtime: statSync(join(releaseDir, f)).mtimeMs }))
   .sort((a, b) => b.mtime - a.mtime)
 
@@ -39,8 +50,15 @@ if (installers.length === 0) {
   process.exit(1)
 }
 
-const installer = installers[0].file
-const installerPath = join(releaseDir, installer)
+let installer = installers[0].file
+let installerPath = join(releaseDir, installer)
+
+if (useStableName) {
+  const stablePath = join(releaseDir, STABLE_NAME)
+  copyFileSync(installerPath, stablePath)
+  installer = STABLE_NAME
+  installerPath = stablePath
+}
 
 function sha512(file) {
   return new Promise((res, rej) => {
@@ -63,6 +81,7 @@ const manifest = {
   sha512: digest,
   size,
   publishedAt: Date.now(),
+  ...(urlBase ? { url: `${urlBase}/${encodeURIComponent(basename(installerPath))}` } : {}),
   ...(notes ? { notes } : {})
 }
 

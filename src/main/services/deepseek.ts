@@ -21,6 +21,28 @@ export interface StreamResult {
   reasoning: string
 }
 
+/**
+ * Cheap credential check for the setup wizard. Lists models instead of sending
+ * a paid completion prompt.
+ */
+export async function testAiConnection(): Promise<{ ok: boolean; message: string }> {
+  const apiKey = getSetting('DEEPSEEK_API_KEY')
+  if (!apiKey) return { ok: false, message: 'No API key saved yet.' }
+  const baseUrl = (getSetting('DEEPSEEK_BASE_URL') || 'https://api.deepseek.com').replace(/\/+$/, '')
+  try {
+    const res = await fetch(`${baseUrl}/models`, {
+      headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(15_000)
+    })
+    if (!res.ok) return { ok: false, message: `DeepSeek returned HTTP ${res.status}.` }
+    const body = (await res.json().catch(() => null)) as { data?: unknown[] } | null
+    const count = Array.isArray(body?.data) ? body.data.length : 0
+    return { ok: true, message: count > 0 ? `Connected — ${count} models available.` : 'Connected.' }
+  } catch (e) {
+    return { ok: false, message: (e as Error).message }
+  }
+}
+
 const SYSTEM_PROMPT = `You are FinanceBot, a senior personal financial advisor embedded in a local desktop app for a user in New Zealand.
 
 You have read-and-write access to the user's finances (bank balances, recent transactions, budget categories and their spend progress, and insurance policies). A read-only snapshot is attached to every message as a JSON document in a <financial_context> block.

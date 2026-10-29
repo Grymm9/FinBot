@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { DashboardSummary, Deduction } from '@shared/types'
 import { Card, EmptyState, SectionHeader } from './ui'
-import { money, shortDate } from '../lib/format'
+import { money, shortDate, timestampDate } from '../lib/format'
 
 export default function Notifications({
   summary,
@@ -15,6 +15,8 @@ export default function Notifications({
   const matched = summary?.matchedPayments ?? []
   const duplicates = summary?.duplicateCharges ?? []
   const insights = summary?.insights ?? []
+  const aiAlerts = summary?.aiAlerts ?? []
+  const aiUnread = aiAlerts.filter((a) => !a.readAt).length
 
   useEffect(() => {
     if (missed.length > 0) {
@@ -48,7 +50,17 @@ export default function Notifications({
     onChanged()
   }
 
-  const total = missed.length + duplicates.length + matched.length + insights.length
+  const reviewAi = async (id: number): Promise<void> => {
+    await window.api.markAiAlertRead(id)
+    onChanged()
+  }
+
+  const dismissAi = async (id: number): Promise<void> => {
+    await window.api.dismissAiAlert(id)
+    onChanged()
+  }
+
+  const total = missed.length + duplicates.length + matched.length + insights.length + aiAlerts.length
   const selectCls =
     'rounded-md border border-white/[0.16] bg-white/[0.06] px-2 py-1 text-xs text-slate-300 focus:border-accent focus:outline-none'
 
@@ -56,13 +68,76 @@ export default function Notifications({
     <div className="space-y-6">
       <SectionHeader
         title="Notifications"
-        subtitle="Missed payments, duplicate charges and spending insights — resolve or dismiss them here."
+        subtitle="AI insights, missed payments, duplicate charges and spending alerts — review or dismiss them here."
       />
 
       {total === 0 ? (
-        <EmptyState title="All clear" hint="No missed payments, duplicate charges or spending insights right now." />
+        <EmptyState title="All clear" hint="No AI insights, missed payments, duplicate charges or spending alerts right now." />
       ) : (
         <>
+          {aiAlerts.length > 0 && (
+            <Card>
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                <h3 className="text-sm font-semibold text-slate-200">AI insights</h3>
+                {aiUnread > 0 ? (
+                  <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-accent px-2 py-0.5 text-[10px] font-bold text-surface-950 shadow-[0_0_10px_rgba(62,166,255,0.5)]">
+                    {aiUnread > 99 ? '99+' : aiUnread} unread
+                  </span>
+                ) : (
+                  <span className="text-[11px] text-slate-500">All reviewed</span>
+                )}
+              </div>
+              <ul className="divide-y divide-white/[0.08]">
+                {aiAlerts.map((a) => (
+                  <li key={a.id} className="flex flex-wrap items-start justify-between gap-3 py-3">
+                    <div className="min-w-0 flex-1">
+                      <p
+                        className={`flex items-center gap-2 text-sm font-medium ${
+                          a.severity === 'bad' ? 'text-danger' : a.severity === 'warn' ? 'text-warn' : 'text-slate-200'
+                        }`}
+                      >
+                        <span
+                          className={`h-1.5 w-1.5 shrink-0 rounded-full ${
+                            a.severity === 'bad' ? 'bg-danger' : a.severity === 'warn' ? 'bg-warn' : 'bg-accent'
+                          }`}
+                        />
+                        {a.title}
+                        {!a.readAt && (
+                          <span className="rounded-full bg-white/[0.12] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300">
+                            New
+                          </span>
+                        )}
+                      </p>
+                      <p className="mt-1 text-xs leading-relaxed text-slate-400">{a.body}</p>
+                      <p className="mt-1 text-[11px] text-slate-500">
+                        {[a.category, a.merchant].filter(Boolean).join(' · ')}
+                        {a.category || a.merchant ? ' · ' : ''}
+                        {timestampDate(a.createdAt)}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                      {!a.readAt && (
+                        <button
+                          onClick={() => void reviewAi(a.id)}
+                          className="rounded-md px-2 py-1 text-xs text-accent hover:bg-accent/10"
+                        >
+                          Mark reviewed
+                        </button>
+                      )}
+                      <button
+                        onClick={() => void dismissAi(a.id)}
+                        title="Dismiss"
+                        className="rounded-md px-2 py-1 text-xs text-slate-500 hover:bg-white/[0.06] hover:text-slate-300"
+                      >
+                        Dismiss
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          )}
+
           {insights.length > 0 && (
             <Card>
               <h3 className="mb-3 text-sm font-semibold text-slate-200">

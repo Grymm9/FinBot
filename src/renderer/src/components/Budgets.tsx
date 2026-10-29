@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type DragEvent } from 'react'
+import { useEffect, useState } from 'react'
 import type { BudgetGroup, Category, CategoryRouting, DashboardSummary } from '@shared/types'
 import { monthlyAmount, FREQUENCIES, frequencyLabel } from '@shared/frequency'
 import { Button, Card, EmptyState, ProgressBar, SectionHeader } from './ui'
@@ -21,7 +21,6 @@ export default function Budgets({
 }): JSX.Element {
   const [categories, setCategories] = useState<Category[]>([])
   const [importing, setImporting] = useState(false)
-  const [dragging, setDragging] = useState(false)
   const [editing, setEditing] = useState<string | null>(null)
   const [draft, setDraft] = useState('')
   const [draftFrequency, setDraftFrequency] = useState('monthly')
@@ -94,24 +93,6 @@ export default function Budgets({
     }
   }
 
-  const importImage = useCallback(
-    async (filePath: string): Promise<void> => {
-      setImporting(true)
-      setMessage('')
-      setSkipped(null)
-      setOcrText(null)
-      try {
-        const res = await window.api.importBudgetImage(filePath)
-        applyResult(res, 'image')
-      } catch (e) {
-        setMessage(`Image import failed: ${(e as Error).message}`)
-      } finally {
-        setImporting(false)
-      }
-    },
-    [onChanged]
-  )
-
   const importImageDialog = async (): Promise<void> => {
     setImporting(true)
     setMessage('')
@@ -125,19 +106,6 @@ export default function Budgets({
     } finally {
       setImporting(false)
     }
-  }
-
-  const onDrop = async (e: DragEvent<HTMLDivElement>): Promise<void> => {
-    e.preventDefault()
-    setDragging(false)
-    const file = e.dataTransfer.files?.[0]
-    if (!file) return
-    const path = window.api.getPathForFile(file)
-    if (!path) {
-      setMessage('Could not resolve the dropped file — use “Import image” instead.')
-      return
-    }
-    await importImage(path)
   }
 
   const saveEdit = async (name: string): Promise<void> => {
@@ -319,7 +287,7 @@ export default function Budgets({
     <div className="space-y-6">
       <SectionHeader
         title="Budgets"
-        subtitle="Import your baseline budget from a CSV or a photo/screenshot, with live spend from your bank."
+        subtitle="Import your baseline budget from a CSV or a screenshot, with live spend from your bank."
         action={
           <div className="flex flex-wrap gap-2">
             {selected.size > 0 && (
@@ -448,23 +416,6 @@ export default function Budgets({
         </Card>
       )}
 
-      <div
-        onDragOver={(e) => {
-          e.preventDefault()
-          setDragging(true)
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
-        className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed py-6 text-center transition-colors ${
-          dragging ? 'border-accent/60 bg-accent/[0.08]' : 'border-white/[0.16] bg-white/[0.04] backdrop-blur-[20px] backdrop-saturate-[1.8]'
-        }`}
-      >
-        <p className="text-sm font-medium text-slate-200">Drag & drop a budget image here</p>
-        <p className="mt-1 text-xs text-slate-500">
-          PNG / JPG screenshot of your budget table — OCR will read the categories and amounts.
-        </p>
-      </div>
-
       {message && <p className="text-sm text-accent">{message}</p>}
 
       {skipped && (
@@ -496,7 +447,7 @@ export default function Budgets({
       {categories.length === 0 && groups.length === 0 ? (
         <EmptyState
           title="No budget yet"
-          hint="Import a CSV or drop a screenshot of your budget. Columns: category, monthly budget (e.g. “Groceries, 800”)."
+          hint="Import a CSV or use “Import image” for a screenshot of your budget. Columns: category, monthly budget (e.g. “Groceries, 800”)."
         />
       ) : (
         <Card>
@@ -714,66 +665,79 @@ export default function Budgets({
                 <div className="mt-2 space-y-1">
                   {g.items.map((it) => {
                     const cat = categories.find((c) => c.name === it.category)
+                    const budget = cat ? monthlyAmount(cat.amount, cat.frequency) : it.amount
+                    const spent = spendFor(it.category)
+                    const percent = budget > 0 ? (spent / budget) * 100 : 0
                     return (
                       <div
                         key={it.category}
-                        className="flex items-center justify-between rounded-md border border-white/[0.1] bg-white/[0.05] px-2 py-1.5"
+                        className="rounded-md border border-white/[0.1] bg-white/[0.05] px-2 py-1.5"
                       >
-                        <span className="text-sm text-slate-200">{it.category}</span>
-                        <div className="flex items-center gap-2">
-                          {editingGroupItem === it.category ? (
-                            <div className="flex items-center gap-1">
-                              <input
-                                autoFocus
-                                type="number"
-                                min={0}
-                                step="0.01"
-                                value={groupItemDraft}
-                                onChange={(e) => setGroupItemDraft(e.target.value)}
-                                onBlur={() => saveGroupItem(it.category)}
-                                onKeyDown={(e) => e.key === 'Enter' && saveGroupItem(it.category)}
-                                className="w-20 rounded-md border border-white/[0.16] bg-white/[0.06] px-2 py-1 text-sm text-slate-100 focus:border-accent focus:outline-none"
-                              />
-                              <select
-                                value={groupItemFreq}
-                                onChange={(e) => setGroupItemFreq(e.target.value)}
-                                className="rounded-md border border-white/[0.16] bg-white/[0.06] px-1 py-1 text-xs text-slate-100 focus:border-accent focus:outline-none"
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-slate-200">{it.category}</span>
+                          <div className="flex items-center gap-2">
+                            {editingGroupItem === it.category ? (
+                              <div className="flex items-center gap-1">
+                                <input
+                                  autoFocus
+                                  type="number"
+                                  min={0}
+                                  step="0.01"
+                                  value={groupItemDraft}
+                                  onChange={(e) => setGroupItemDraft(e.target.value)}
+                                  onBlur={() => saveGroupItem(it.category)}
+                                  onKeyDown={(e) => e.key === 'Enter' && saveGroupItem(it.category)}
+                                  className="w-20 rounded-md border border-white/[0.16] bg-white/[0.06] px-2 py-1 text-sm text-slate-100 focus:border-accent focus:outline-none"
+                                />
+                                <select
+                                  value={groupItemFreq}
+                                  onChange={(e) => setGroupItemFreq(e.target.value)}
+                                  className="rounded-md border border-white/[0.16] bg-white/[0.06] px-1 py-1 text-xs text-slate-100 focus:border-accent focus:outline-none"
+                                >
+                                  {FREQUENCIES.map((f) => (
+                                    <option key={f.value} value={f.value}>
+                                      {f.label}
+                                    </option>
+                                  ))}
+                                </select>
+                                <input
+                                  type="date"
+                                  value={groupItemActiveFrom}
+                                  onChange={(e) => setGroupItemActiveFrom(e.target.value)}
+                                  title="Active from (spend before this date is ignored)"
+                                  className="rounded-md border border-white/[0.16] bg-white/[0.06] px-1 py-1 text-xs text-slate-100 focus:border-accent focus:outline-none"
+                                />
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setEditingGroupItem(it.category)
+                                  setGroupItemDraft(String(cat?.amount ?? it.amount))
+                                  setGroupItemFreq(cat?.frequency ?? 'monthly')
+                                  setGroupItemActiveFrom(cat?.activeFrom ?? '')
+                                }}
+                                title="Edit cost"
+                                className="text-xs tabular-nums text-slate-500 hover:text-slate-300"
                               >
-                                {FREQUENCIES.map((f) => (
-                                  <option key={f.value} value={f.value}>
-                                    {f.label}
-                                  </option>
-                                ))}
-                              </select>
-                              <input
-                                type="date"
-                                value={groupItemActiveFrom}
-                                onChange={(e) => setGroupItemActiveFrom(e.target.value)}
-                                title="Active from (spend before this date is ignored)"
-                                className="rounded-md border border-white/[0.16] bg-white/[0.06] px-1 py-1 text-xs text-slate-100 focus:border-accent focus:outline-none"
-                              />
-                            </div>
-                          ) : (
+                                {money(it.amount)}/mo ✎
+                              </button>
+                            )}
                             <button
-                              onClick={() => {
-                                setEditingGroupItem(it.category)
-                                setGroupItemDraft(String(cat?.amount ?? it.amount))
-                                setGroupItemFreq(cat?.frequency ?? 'monthly')
-                                setGroupItemActiveFrom(cat?.activeFrom ?? '')
-                              }}
-                              title="Edit cost"
-                              className="text-xs tabular-nums text-slate-500 hover:text-slate-300"
+                              onClick={() => removeGroupItem(g.id, it.category)}
+                              title="Remove from group"
+                              className="text-slate-600 hover:text-danger"
                             >
-                              {money(it.amount)}/mo ✎
+                              ✕
                             </button>
-                          )}
-                          <button
-                            onClick={() => removeGroupItem(g.id, it.category)}
-                            title="Remove from group"
-                            className="text-slate-600 hover:text-danger"
-                          >
-                            ✕
-                          </button>
+                          </div>
+                        </div>
+                        <div className="mt-1.5 flex items-center gap-3">
+                          <div className="flex-1">
+                            <ProgressBar percent={percent} />
+                          </div>
+                          <span className="w-36 shrink-0 text-right text-xs tabular-nums text-slate-400">
+                            {money(spent)} <span className="text-slate-600">/</span> {money(budget)}
+                          </span>
                         </div>
                       </div>
                     )

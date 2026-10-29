@@ -17,12 +17,13 @@ type ImportOutcome = {
 
 function upsertBudgetRows(rows: Array<{ category: string; monthlyBudget: number }>): Category[] {
   const db = getDb()
+  const now = Date.now()
   const upsert = db.prepare(
-    `INSERT INTO categories (name, amount, frequency) VALUES (?, ?, 'monthly')
-     ON CONFLICT(name) DO UPDATE SET amount = excluded.amount, frequency = excluded.frequency`
+    `INSERT INTO categories (name, amount, frequency, updated_at) VALUES (?, ?, 'monthly', ?)
+     ON CONFLICT(name) DO UPDATE SET amount = excluded.amount, frequency = excluded.frequency, updated_at = excluded.updated_at`
   )
   const tx = db.transaction(() => {
-    for (const p of rows) upsert.run(p.category, p.monthlyBudget)
+    for (const p of rows) upsert.run(p.category, p.monthlyBudget, now)
   })
   tx()
   return listCategories()
@@ -67,9 +68,9 @@ export function listCategories(): Category[] {
 export function setCategoryBudget(name: string, amount: number, frequency = 'monthly'): Category[] {
   getDb()
     .prepare(
-      'INSERT INTO categories (name, amount, frequency) VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET amount = excluded.amount, frequency = excluded.frequency'
+      'INSERT INTO categories (name, amount, frequency, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(name) DO UPDATE SET amount = excluded.amount, frequency = excluded.frequency, updated_at = excluded.updated_at'
     )
-    .run(name, amount, frequency)
+    .run(name, amount, frequency, Date.now())
   return listCategories()
 }
 

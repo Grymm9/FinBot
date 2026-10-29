@@ -29,6 +29,19 @@ export function shortDate(iso: string | null | undefined): string {
   return d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', timeZone: 'Pacific/Auckland' })
 }
 
+/** A millisecond timestamp rendered as a local NZ date. */
+export function timestampDate(ts: number | null | undefined): string {
+  if (ts == null) return '—'
+  const d = new Date(ts)
+  if (Number.isNaN(d.getTime())) return '—'
+  return d.toLocaleDateString('en-NZ', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'Pacific/Auckland'
+  })
+}
+
 export function monthLabel(ym: string): string {
   const [y, m] = ym.split('-').map(Number)
   if (!y || !m) return ym

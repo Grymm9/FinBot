@@ -169,6 +169,23 @@ export interface TransactionSearchResult {
   totalCredit: number
 }
 
+/** Result of importing a bank-statement CSV (the Akahu-free path). */
+export interface TransactionImportResult {
+  imported: number
+  /** Rows that could not be parsed plus rows that were already imported. */
+  skipped: number
+  dateFrom: string | null
+  dateTo: string | null
+  accountNames: string[]
+  skippedSample: string[]
+  columns: {
+    date: string | null
+    description: string | null
+    amount: string | null
+    account: string | null
+  }
+}
+
 export interface BackupInfo {
   fileName: string
   path: string
@@ -210,6 +227,35 @@ export interface Insight {
   detail: string
   amount?: number
   date?: string
+}
+
+// ------------------------------------------------------------------ ai alerts
+
+export type AiAlertKind = 'subscription_increase' | 'spending_velocity'
+
+/**
+ * A persisted AI insight shown on the Dashboard panel. Alerts are deduped by a
+ * stable key so a scheduler re-run never creates the same card twice.
+ */
+export interface AiAlert {
+  id: number
+  kind: AiAlertKind
+  severity: Insight['severity']
+  title: string
+  body: string
+  merchant: string | null
+  category: string | null
+  amount: number | null
+  previousAmount: number | null
+  cycleStart: string | null
+  createdAt: number
+  updatedAt: number
+  readAt: number | null
+}
+
+export interface AiAlertFeed {
+  alerts: AiAlert[]
+  unread: number
 }
 
 export interface CycleHistoryEntry {
@@ -337,6 +383,8 @@ export interface DashboardSummary {
   health: ServiceHealth[]
   forecast: ForecastSummary
   review: CycleReview | null
+  aiAlerts: AiAlert[]
+  aiUnread: number
 }
 
 export interface SyncResult {
@@ -377,6 +425,8 @@ export interface ServiceHealth {
   lastError: string | null
   lastErrorAt: number | null
   failures: number
+  /** False when the integration has no credentials yet (user skipped setup). */
+  configured: boolean
 }
 
 // -------------------------------------------------------------------- forecast
@@ -473,4 +523,89 @@ export interface EvalReport {
   passed: number
   total: number
   cases: EvalCaseResult[]
+}
+
+// ---------------------------------------------------------------------- deals
+
+/** The three recurring household bills that can be compared on price. */
+export type DealCategory = 'power' | 'broadband' | 'mobile'
+
+/**
+ * One published plan in the local catalogue. Fixed-price plans (broadband,
+ * mobile) use `monthlyPrice`; power plans are modelled as a daily fixed charge
+ * plus a per-kWh rate so they can be priced against real usage.
+ */
+export interface DealPlan {
+  id: number
+  category: DealCategory
+  provider: string
+  planName: string
+  monthlyPrice: number | null
+  /** Power only: dollars per kWh, GST inclusive. */
+  variableRate: number | null
+  /** Power only: dollars per day, GST inclusive. */
+  dailyCharge: number | null
+  /** Power only: lines network the rates apply to, e.g. `orion`. */
+  region: string | null
+  sourceUrl: string | null
+  verifiedAt: number | null
+  /** Set when a refresh could no longer find the recorded price on the page. */
+  stale: boolean
+  notes: string | null
+}
+
+/** A plan entered by the user, e.g. from a recent bill or a retailer's page. */
+export interface DealPlanInput {
+  category: DealCategory
+  provider: string
+  planName: string
+  monthlyPrice?: number | null
+  variableRate?: number | null
+  dailyCharge?: number | null
+  region?: string | null
+  sourceUrl?: string | null
+  notes?: string | null
+}
+
+export interface DealOffer {
+  plan: DealPlan
+  monthlyCost: number
+  /** Positive means cheaper than what you pay now. */
+  monthlySaving: number
+  annualSaving: number
+  /** The plan you appear to be on today. */
+  isCurrent: boolean
+}
+
+export interface DealComparison {
+  category: DealCategory
+  label: string
+  currentProvider: string | null
+  currentMonthly: number | null
+  /** Power only: monthly kWh used for pricing. */
+  usageKwh: number | null
+  offers: DealOffer[]
+  bestSaveMonthly: number
+  bestSaveAnnual: number
+  lastChecked: number | null
+  staleCount: number
+  /** Shown when the data can't support a like-for-like comparison. */
+  note: string | null
+}
+
+export interface RenewalReview {
+  policyId: number
+  provider: string | null
+  coverType: string | null
+  renewalDate: string
+  daysAway: number
+  premium: number | null
+  frequency: string | null
+}
+
+export interface DealsReport {
+  comparisons: DealComparison[]
+  renewals: RenewalReview[]
+  lastChecked: number | null
+  powerUsageKwh: number
 }

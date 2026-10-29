@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Deduction, InsuranceBundle, InsurancePolicy } from '@shared/types'
 import { INSURANCE_FREQUENCIES } from '@shared/frequency'
 import { Badge, Button, Card, EmptyState, SectionHeader } from './ui'
@@ -18,7 +18,6 @@ const COVER_TYPES = [
 
 export default function Insurance({ onChanged }: { onChanged: () => void }): JSX.Element {
   const [policies, setPolicies] = useState<InsurancePolicy[]>([])
-  const [dragging, setDragging] = useState(false)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [editingId, setEditingId] = useState<number | null>(null)
@@ -63,37 +62,6 @@ export default function Insurance({ onChanged }: { onChanged: () => void }): JSX
   useEffect(() => {
     load()
   }, [])
-
-  const importFiles = useCallback(
-    async (paths: string[]): Promise<void> => {
-      setBusy(true)
-      setMessage('')
-      try {
-        const res = await window.api.importInsurancePdfs(paths)
-        await load()
-        onChanged()
-        setMessage(`Imported ${res.imported} ${res.imported === 1 ? 'policy' : 'policies'} — metadata extracted.`)
-      } catch (e) {
-        setMessage(`Import failed: ${(e as Error).message}`)
-      } finally {
-        setBusy(false)
-      }
-    },
-    [onChanged]
-  )
-
-  const onDrop = async (e: React.DragEvent): Promise<void> => {
-    e.preventDefault()
-    setDragging(false)
-    const files = Array.from(e.dataTransfer.files ?? [])
-    if (files.length === 0) return
-    const paths = files.map((f) => window.api.getPathForFile(f)).filter((p): p is string => Boolean(p))
-    if (paths.length === 0) {
-      setMessage('Could not resolve the dropped file paths — use “Browse” instead.')
-      return
-    }
-    await importFiles(paths)
-  }
 
   const browse = async (): Promise<void> => {
     const res = await window.api.importInsurancePdfDialog()
@@ -304,7 +272,7 @@ export default function Insurance({ onChanged }: { onChanged: () => void }): JSX
     <div className="space-y-6">
       <SectionHeader
         title="Insurance & policy auditor"
-        subtitle="Drop policy PDFs to extract provider, cover, premium and renewal date — then link them to real bank debits."
+        subtitle="Import policy PDFs to extract provider, cover, premium and renewal date — then link them to real bank debits."
         action={
           <div className="flex flex-wrap gap-2">
             {selected.size > 0 && (
@@ -326,28 +294,6 @@ export default function Insurance({ onChanged }: { onChanged: () => void }): JSX
       />
 
       {message && <p className="text-sm text-accent">{message}</p>}
-
-      <div
-        onDragOver={(e) => {
-          e.preventDefault()
-          setDragging(true)
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={onDrop}
-        className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed py-12 text-center transition-colors ${
-          dragging ? 'border-accent/60 bg-accent/[0.08]' : 'border-white/[0.16] bg-white/[0.04] backdrop-blur-[20px] backdrop-saturate-[1.8]'
-        }`}
-      >
-        <svg viewBox="0 0 24 24" className="mb-3 h-8 w-8 fill-slate-500" aria-hidden>
-          <path d="M19.35 10.04A7.49 7.49 0 0 0 12 4C9.11 4 6.6 5.64 5.35 8.04A5.994 5.994 0 0 0 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM14 13v4h-4v-4H7l5-5 5 5h-3z" />
-        </svg>
-        <p className="text-sm font-medium text-slate-200">
-          {busy ? 'Processing…' : 'Drag & drop one or more insurance PDFs here'}
-        </p>
-        <p className="mt-1 text-xs text-slate-500">
-          or use “Browse PDF” (multi-select). Premiums, renewal dates and providers are auto-extracted.
-        </p>
-      </div>
 
       {showAddForm && (
         <Card className="p-4">
@@ -450,7 +396,7 @@ export default function Insurance({ onChanged }: { onChanged: () => void }): JSX
       )}
 
       {policies.length === 0 && bundles.length === 0 ? (
-        <EmptyState title="No policies added yet" hint="Drop a renewal or policy document to get started." />
+        <EmptyState title="No policies added yet" hint="Use “Browse PDF” to import a renewal or policy document to get started." />
       ) : (
         <div className="space-y-4">
           {standalonePolicies.length > 0 && (

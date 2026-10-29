@@ -29,13 +29,18 @@ import type {
   Settings,
   SyncResult,
   Transaction,
+  TransactionImportResult,
   UnmatchedMerchant,
   ServiceHealth,
   ForecastSummary,
   CycleReview,
   AiAction,
+  AiAlertFeed,
   EvalReport,
-  UpdateStatus
+  UpdateStatus,
+  DealCategory,
+  DealPlanInput,
+  DealsReport
 } from '@shared/types'
 
 const api = {
@@ -224,6 +229,10 @@ const api = {
   runBudgetCheck: (): Promise<AlertResult> => ipcRenderer.invoke('alerts:run'),
   previewAlerts: (): Promise<{ flags: AlertResult['flags'] }> => ipcRenderer.invoke('alerts:preview'),
   dismissAlert: (key: string): Promise<void> => ipcRenderer.invoke('notifications:dismiss', key),
+  listAiAlerts: (): Promise<AiAlertFeed> => ipcRenderer.invoke('ai-alerts:list'),
+  refreshAiAlerts: (): Promise<AiAlertFeed> => ipcRenderer.invoke('ai-alerts:refresh'),
+  markAiAlertRead: (id: number): Promise<AiAlertFeed> => ipcRenderer.invoke('ai-alerts:read', id),
+  dismissAiAlert: (id: number): Promise<AiAlertFeed> => ipcRenderer.invoke('ai-alerts:dismiss', id),
   listUserReminders: (): Promise<Reminder[]> => ipcRenderer.invoke('reminders:list'),
   createUserReminder: (message: string, targetDate: string, repeat: string): Promise<Reminder[]> =>
     ipcRenderer.invoke('reminders:create', message, targetDate, repeat),
@@ -253,6 +262,10 @@ const api = {
     to?: string
     limit?: number
   }): Promise<TransactionSearchResult> => ipcRenderer.invoke('transactions:search', filter),
+  importTransactionsCsv: (
+    accountName?: string
+  ): Promise<{ canceled: boolean; fileName?: string | null } & Partial<TransactionImportResult>> =>
+    ipcRenderer.invoke('transactions:import-csv', accountName),
 
   // subscriptions
   listSubscriptions: (): Promise<{ items: Subscription[]; monthlyTotal: number }> =>
@@ -297,12 +310,29 @@ const api = {
   listReviews: (limit?: number): Promise<CycleReview[]> => ipcRenderer.invoke('reviews:list', limit),
   latestReview: (): Promise<CycleReview | null> => ipcRenderer.invoke('reviews:latest'),
 
+  // deals
+  getDeals: (): Promise<DealsReport> => ipcRenderer.invoke('deals:report'),
+  refreshDeals: (): Promise<DealsReport> => ipcRenderer.invoke('deals:refresh'),
+  addDealPlan: (input: DealPlanInput): Promise<DealsReport> => ipcRenderer.invoke('deals:add-plan', input),
+  deleteDealPlan: (id: number): Promise<DealsReport> => ipcRenderer.invoke('deals:delete-plan', id),
+  setPowerUsage: (kwh: number): Promise<DealsReport> => ipcRenderer.invoke('deals:set-usage', kwh),
+  openDealCompare: (category: DealCategory): Promise<void> =>
+    ipcRenderer.invoke('deals:open-compare', category),
+
   // ai actions
   listAiActions: (limit?: number): Promise<AiAction[]> => ipcRenderer.invoke('ai:actions', limit),
   undoAiAction: (id: number): Promise<{ ok: boolean; message: string }> =>
     ipcRenderer.invoke('ai:undo', id),
   runAiEvals: (): Promise<EvalReport> => ipcRenderer.invoke('ai:eval'),
   lastAiEval: (): Promise<EvalReport | null> => ipcRenderer.invoke('ai:eval-last'),
+  testAi: (): Promise<{ ok: boolean; message: string }> => ipcRenderer.invoke('ai:test'),
+
+  // setup helpers
+  getCurrentCycle: (): Promise<{ start: string; end: string; label: string }> =>
+    ipcRenderer.invoke('cycle:current'),
+  getLaunchAtLogin: (): Promise<boolean> => ipcRenderer.invoke('app:launch-at-login'),
+  setLaunchAtLogin: (enabled: boolean): Promise<boolean> =>
+    ipcRenderer.invoke('app:set-launch-at-login', enabled),
 
   // updates
   getUpdateStatus: (): Promise<UpdateStatus> => ipcRenderer.invoke('update:status'),
