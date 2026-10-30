@@ -16,12 +16,21 @@ export default function ChatSidebar({ onDataChanged }: { onDataChanged: () => vo
   const scrollRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    window.api.getChatHistory().then(setMessages)
     window.api
       .getMaskedSettings()
       .then((m) => setProviderLabel(aiProviderPreset(m.AI_PROVIDER).label))
       .catch(() => {})
   }, [])
+
+  // Reload when the panel opens and whenever a Discord poll records new turns,
+  // so a conversation started on the phone appears here without a restart.
+  useEffect(() => {
+    const reload = (): void => {
+      void window.api.getChatHistory().then(setMessages)
+    }
+    if (open) reload()
+    return window.api.onChatChanged(reload)
+  }, [open])
 
   useEffect(() => {
     const offToken = window.api.onChatToken((t) => setStreaming((p) => p + t))
@@ -98,6 +107,10 @@ export default function ChatSidebar({ onDataChanged }: { onDataChanged: () => vo
     'Suggest budget adjustments'
   ]
 
+  // Discord and app messages share one timeline, so a conversation started on
+  // the phone can be read (and continued) here.
+  const hasDiscord = messages.some((m) => m.channel === 'discord')
+
   if (!open) {
     return (
       <button
@@ -153,6 +166,12 @@ export default function ChatSidebar({ onDataChanged }: { onDataChanged: () => vo
       </div>
 
       <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto px-4 py-4">
+        {hasDiscord && (
+          <div className="rounded-xl border border-white/[0.12] bg-white/[0.04] px-3 py-2 text-[11px] leading-relaxed text-slate-500">
+            This conversation includes messages from Discord. Reply here to continue it in the app.
+          </div>
+        )}
+
         {messages.length === 0 && !streaming && (
           <div className="space-y-2">
             <p className="text-sm text-slate-400">Ask me anything about your money.</p>
@@ -179,6 +198,11 @@ export default function ChatSidebar({ onDataChanged }: { onDataChanged: () => vo
                   : 'bg-white/[0.06] text-slate-200 border border-white/[0.12]'
               }`}
             >
+              {m.channel === 'discord' && m.role === 'user' && (
+                <span className="mb-1 block text-[10px] font-medium uppercase tracking-wide text-surface-950/60">
+                  via Discord
+                </span>
+              )}
               {m.content}
             </div>
           </div>

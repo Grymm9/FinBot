@@ -364,7 +364,7 @@ export function registerIpcHandlers(): void {
   ipcMain.handle('email:scan', () => scanEmails())
   ipcMain.handle('email:list', () => listEmails())
   ipcMain.handle('email:set-relevant', (_e, id: number, relevant: boolean) => setEmailRelevant(id, relevant))
-  ipcMain.handle('alerts:run', () => checkAndAlert())
+  ipcMain.handle('alerts:run', () => checkAndAlert(true))
   ipcMain.handle('alerts:preview', () => ({ flags: evaluateBudget() }))
   ipcMain.handle('notifications:dismiss', (_e, key: string) => dismissAlert(key))
   ipcMain.handle('ai-alerts:list', () => getAiAlertFeed())
@@ -478,21 +478,21 @@ export function registerIpcHandlers(): void {
   // -------------------------------------------------------------------- chat
   ipcMain.handle('chat:history', (): ChatMessage[] => {
     const rows = getDb()
-      .prepare(
-        "SELECT id, role, content, created_at, channel FROM chat_logs WHERE channel = 'app' ORDER BY id ASC"
-      )
+      .prepare('SELECT id, role, content, created_at, channel FROM chat_logs ORDER BY id ASC')
       .all() as Array<{ id: number; role: string; content: string; created_at: number; channel: string }>
     return rows.map((r) => ({
       id: r.id,
       role: r.role as ChatMessage['role'],
       content: r.content,
       createdAt: r.created_at,
-      channel: 'app'
+      channel: r.channel === 'discord' ? 'discord' : 'app'
     }))
   })
 
   ipcMain.handle('chat:clear', () => {
-    getDb().prepare("DELETE FROM chat_logs WHERE channel = 'app'").run()
+    // The chat panel shows the shared app + Discord timeline, so Clear clears
+    // both surfaces (Discord messages themselves are not deleted remotely).
+    getDb().prepare('DELETE FROM chat_logs').run()
   })
 
   // ------------------------------------------------------------------ memory

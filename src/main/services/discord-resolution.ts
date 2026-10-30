@@ -1,6 +1,14 @@
+import { BrowserWindow } from 'electron'
 import { getSetting, setSetting } from './settings'
 import { recordFail, recordOk } from './health'
-import { sendDiscordMessage, replyToDiscordMessage } from './discord'
+import {
+  getBotUserId,
+  listActiveThreads,
+  listArchivedThreads,
+  replyToDiscordMessage,
+  sendDiscordMessage
+} from './discord'
+import { forgetThread, listThreads, rememberThread, setThreadCursor } from './discord-threads'
 import { listUnmatchedTransactions, addRule } from './budget'
 import { buildFinancialContext } from './context'
 import { streamChat, baseSystemPrompt } from './deepseek'
@@ -17,6 +25,24 @@ interface DiscordMessage {
   channel_id?: string
   content: string
   author?: { id?: string; bot?: boolean; username?: string }
+}
+
+const API = 'https://discord.com/api/v10'
+const PAGE_LIMIT = 100
+
+/** Snowflake ids are numeric strings; compare them as numbers. */
+function compareIds(a: string, b: string): number {
+  try {
+    const x = BigInt(a)
+    const y = BigInt(b)
+    return x < y ? -1 : x > y ? 1 : 0
+  } catch {
+    return a.localeCompare(b)
+  }
+}
+
+function isFromBot(m: DiscordMessage): boolean {
+  return !!m.author?.bot || (m.author?.username ?? '') === 'FinanceBot'
 }
 
 /** Send a numbered list of uncategorised transactions to Discord for the user to map. */
@@ -74,7 +100,7 @@ function applyMappingReply(content: string): boolean {
   return applied
 }
 
-/** Ask the AI about a Discord message and answer inside a thread on it. */
+/** Ask the AI about a Discord message and answer in the same channel/thread. */
 async function replyToDiscord(msg: DiscordMessage): Promise<void> {
   const content = (msg.content ?? '').trim()
   const context = buildFinancialContext()
@@ -100,51 +126,47 @@ async function replyToDiscord(msg: DiscordMessage): Promise<void> {
   await replyToDiscordMessage(channelId, msg.id, text, `FinanceBot · ${content.slice(0, 50)}`)
 }
 
+/** Fetch messages newer than `after` (or the latest page when omitted). */
+async function fetchMessages(channelId: string, after?: string): Promise<DiscordMessage[]> {
+  const token = getSetting('DISCORD_BOT_TOKEN')
+  if (!token) throw new Error('Discord bot token is not configured.')
+  const query = `?limit=${PAGE_LIMIT}${after ? `&after=${after}` : ''}`
+  const res = await fetch(`${API}/channels/${channelId}/messages${query}`, {
+    headers: { Authorization: `Bot ${token}` }
+  })
+  if (!res.ok) {
+    const error = new Error(`Discord fetch failed (HTTP ${res.status})`) as Error & { status?: number }
+    error.status = res.status
+    throw error
+  }
+  const batch = (await res.json().catch(() => [])) as DiscordMessage[]
+  if (!Array.isArray(batch)) return []
+  return [...batch].sort((a, b) => compareIds(a.id, b.id))
+}
+
+interface PollResult {
+  processed: number
+  replied: number
+  newestId?: string
+}
+
 /**
- * Poll the configured Discord channel for new messages. Uncategorised-mapping
- * replies ("N Category") are applied as rules; everything else is passed to the
- * AI, which can read the financial context and make changes via its tools, and
- * its reply is posted back to the channel.
+ * Poll one channel/thread. With no cursor, the newest message is recorded
+ * without replying, so enabling this on an existing server never answers
+ * old history.
  */
-export async function processDiscordReplies(): Promise<{ processed: number; replied: number; error?: string }> {
-  const botToken = getSetting('DISCORD_BOT_TOKEN')
-  const channelId = getSetting('DISCORD_CHANNEL_ID')
-  if (!botToken || !channelId) {
-    return { processed: 0, replied: 0, error: 'Discord bot token / channel ID not configured.' }
-  }
-
-  const lastId = getSetting('discord_last_message_id')
-  const url = `https://discord.com/api/v10/channels/${channelId}/messages?limit=20${lastId ? '&after=' + lastId : ''}`
-
-  let messages: DiscordMessage[]
-  try {
-    const res = await fetch(url, { headers: { Authorization: `Bot ${botToken}` } })
-    if (!res.ok) return { processed: 0, replied: 0, error: `Discord fetch failed (HTTP ${res.status})` }
-    messages = (await res.json()) as DiscordMessage[]
-  } catch (e) {
-    return { processed: 0, replied: 0, error: (e as Error).message }
-  }
-
+async function pollChannel(channelId: string, cursor: string | undefined): Promise<PollResult> {
+  const messages = await fetchMessages(channelId, cursor)
   if (messages.length === 0) return { processed: 0, replied: 0 }
 
-  // On the very first poll just record the latest message id and don't reply
-  // to channel history.
-  const newestId = messages[0].id
-  if (!lastId) {
-    setSetting('discord_last_message_id', newestId)
-    return { processed: 0, replied: 0 }
-  }
-
-  // Skip the bot's own messages (webhook "FinanceBot" or any bot account).
-  const incoming = messages.filter((m) => !m.author?.bot && (m.author?.username ?? '') !== 'FinanceBot')
+  const newestId = messages[messages.length - 1].id
+  if (!cursor) return { processed: 0, replied: 0, newestId }
 
   let processed = 0
   let replied = 0
-
-  // Discord returns newest-first; process oldest-first.
-  for (const msg of [...incoming].reverse()) {
+  for (const msg of messages) {
     const content = (msg.content ?? '').trim()
-    if (!content) continue
+    if (!content || isFromBot(msg)) continue
 
     if (applyMappingReply(content)) {
       processed++
@@ -158,9 +180,97 @@ export async function processDiscordReplies(): Promise<{ processed: number; repl
       console.error('Discord AI reply failed:', e)
     }
   }
+  return { processed, replied, newestId }
+}
 
-  setSetting('discord_last_message_id', newestId)
-  return { processed, replied }
+/**
+ * Find threads owned by this bot (active and recently archived) and start
+ * tracking them. Threads created by older versions of FinanceBot were not
+ * persisted, so discovery is what makes them resumable after an upgrade.
+ */
+async function discoverThreads(parentChannelId: string): Promise<void> {
+  const botId = await getBotUserId()
+  const [active, archived] = await Promise.all([
+    listActiveThreads(parentChannelId),
+    listArchivedThreads(parentChannelId)
+  ])
+
+  for (const thread of [...active, ...archived]) {
+    if (thread.parent_id && thread.parent_id !== parentChannelId) continue
+    // Bot-created threads are owned by the bot; older ones are also recognised
+    // by the "FinanceBot · …" naming convention.
+    const owned = thread.owner_id === botId || (thread.name ?? '').startsWith('FinanceBot')
+    if (!owned) continue
+    // `null` cursor: the first poll records the newest id and skips history.
+    rememberThread(thread.id, parentChannelId, thread.name ?? '', null)
+  }
+}
+
+let running = false
+
+/**
+ * Poll the configured Discord channel and every FinanceBot thread for new
+ * messages. Messages are passed to the AI, which can read the financial
+ * context and make changes via its tools; replies stay in the thread the
+ * conversation came from.
+ */
+export async function processDiscordReplies(): Promise<{
+  processed: number
+  replied: number
+  error?: string
+}> {
+  if (running) return { processed: 0, replied: 0 }
+
+  const botToken = getSetting('DISCORD_BOT_TOKEN')
+  const channelId = getSetting('DISCORD_CHANNEL_ID')
+  if (!botToken || !channelId) {
+    return { processed: 0, replied: 0, error: 'Discord bot token / channel ID not configured.' }
+  }
+
+  running = true
+  try {
+    await discoverThreads(channelId)
+
+    let processed = 0
+    let replied = 0
+    let error: string | undefined
+
+    // Parent channel (new questions, uncategorised mapping replies).
+    const parentCursor = getSetting('discord_last_message_id') || undefined
+    try {
+      const parent = await pollChannel(channelId, parentCursor)
+      processed += parent.processed
+      replied += parent.replied
+      if (parent.newestId) setSetting('discord_last_message_id', parent.newestId)
+    } catch (e) {
+      error = (e as Error).message
+    }
+
+    // Threads (continuations of earlier answers).
+    for (const thread of listThreads(channelId)) {
+      try {
+        const result = await pollChannel(thread.threadId, thread.lastMessageId ?? undefined)
+        processed += result.processed
+        replied += result.replied
+        if (result.newestId) setThreadCursor(thread.threadId, result.newestId)
+      } catch (e) {
+        const status = (e as Error & { status?: number }).status
+        // Deleted or inaccessible threads would otherwise be retried forever.
+        if (status === 404 || status === 403) forgetThread(thread.threadId)
+      }
+    }
+
+    // Let an open AI Advisor panel pull the new Discord messages immediately.
+    if (processed + replied > 0) {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) win.webContents.send('chat:changed')
+      }
+    }
+
+    return { processed, replied, error }
+  } finally {
+    running = false
+  }
 }
 
 /** Poll periodically for new Discord messages and reply to them. */

@@ -3,6 +3,7 @@ import { getSetting, getSettingNumber, setSetting } from './settings'
 import { computeBudgetStatus } from './budget'
 import { currentCycleRange } from './cycle'
 import { sendDiscordMessage } from './discord'
+import { exceededAlertMessage, exceededBudgets, overspendKey } from './alert-math'
 import { checkExpectedPayments } from './payments'
 import { daysIn, daysInto, paceRatio, projectedSpend } from './reconcile-math'
 import { todayLocalIso } from './dates'
@@ -47,32 +48,40 @@ export function evaluateBudget(): AlertResult['flags'] {
 }
 
 /**
- * Run a full budget check. If any category is pacing too fast, fire a
- * Discord webhook (when configured). Returns a result for the UI.
+ * Run a full budget check. Only categories whose actual spend is over budget
+ * trigger a Discord notification — projected ("on track to overspend") flags
+ * stay in the UI but no longer page the user. `force` (manual "Run budget
+ * check now") bypasses the once-per-cycle dedupe.
  */
-export async function checkAndAlert(): Promise<AlertResult> {
+export async function checkAndAlert(force = false): Promise<AlertResult> {
   const flags = evaluateBudget()
+  const exceeded = exceededBudgets(flags)
   const cycle = currentCycleRange()
   const webhookConfigured = !!getSetting('DISCORD_WEBHOOK_URL')
 
   let message: string
   let fired = false
 
-  if (flags.length === 0) {
-    message = `Budget is on track for this cycle (${cycle.label}).`
+  if (exceeded.length === 0) {
+    // Pacing flags are informational only; the user asked not to be notified
+    // until a budget is genuinely blown.
+    setSetting('overspend_alert_key', '')
+    message =
+      flags.length > 0
+        ? `No budget has been exceeded yet (${cycle.label}). ${flags.length} ${
+            flags.length === 1 ? 'category is' : 'categories are'
+          } pacing above target.`
+        : `Budget is on track for this cycle (${cycle.label}).`
   } else {
-    const list = flags
-      .map(
-        (f) =>
-          `• **${f.category}**: $${f.spent} spent, on track for $${f.projected} vs $${f.budgeted} budget (${Math.round(f.ratio * 100)}%)`
-      )
-      .join('\n')
-    message = `⚠️ **Overspend risk** (cycle starting ${cycle.label}):\n${list}\n\nConsider rebalancing before your next payday.`
+    message = exceededAlertMessage(cycle.label, exceeded)
+    const key = overspendKey(cycle.start, exceeded)
+    const lastKey = getSetting('overspend_alert_key')
 
-    if (webhookConfigured) {
+    if (webhookConfigured && (force || lastKey !== key)) {
       try {
         const r = await sendDiscordMessage(message)
         fired = r.ok
+        if (r.ok) setSetting('overspend_alert_key', key)
       } catch (e) {
         console.error('Discord alert failed:', e)
         fired = false

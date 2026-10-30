@@ -27,7 +27,7 @@ No Akahu? Export transactions from your bank as CSV and import them from **Trans
   - Browse in policy/renewal PDFs (multi-select) → auto-extracts provider, cover type, premium, renewal date.
   - Links policies to real bank debits.
   - Scans transactions for recurring charges and totals your monthly commitment.
-- **Automated Discord alerts** — a background service checks spend pacing vs. your income cycle (before the 15th by default) and pings your phone if a category is on track to blow its budget.
+- **Automated Discord alerts** - a background service checks spend pacing vs. your income cycle and pings your phone only when a category has **actually exceeded** its budget. Pacing warnings that are still only projected stay in the app. Reminders, cycle reviews and email alerts are unchanged.
 - **Dashboard** — a full-width Notifications panel above the two core budget views: allocation vs. spent/remaining progress and a category donut. Other widgets live on their own pages.
 - **AI insights** — background checks persist actionable cards for recurring price rises (including utilities and fixed bills, annualised) and spending running 25%+ ahead of the three-month rolling average for the same cycle day. Each card has its own unread/read state, and the sidebar badge counts what still needs review.
 - **Reorderable navigation** — drag any sidebar item up or down; the order is saved in local storage and new pages still appear automatically after an update.
@@ -35,7 +35,7 @@ No Akahu? Export transactions from your bank as CSV and import them from **Trans
 - **Cash-flow forecast** — deterministic projection from today to payday (committed transfers, subscriptions, remaining budget, estimated income) with a low-balance warning.
 - **Cycle reviews** — a written summary of each closed pay cycle (biggest overspends, new merchants, subscription load), posted to Discord once.
 - **Deals** — power, broadband and phone ranked against a local plan catalogue, using your real monthly usage. Prices come only from public retailer pages the app can fetch, each shown with its verification date and re-checked weekly; a plan whose provider disappears is marked unverified rather than silently repriced. Power is address-priced, so you add your plan from a bill; broadband and mobile ship with verified Skinny plans. Insurance is not auto-compared — Discord gets a nudge a week before each renewal for a manual review.
-- **Persistent AI chat** — DeepSeek (`deepseek-chat`) gets a read-only JSON snapshot of your budget, transactions, subscriptions and insurance on every message.
+- **Persistent AI chat** - DeepSeek (`deepseek-chat`) gets a read-only JSON snapshot of your budget, transactions, subscriptions and insurance on every message. The app and Discord share one conversation timeline: replies in a Discord thread continue turn by turn, and you can pick the same conversation up in the app's AI Advisor.
 - **AI write audit + undo** — every change the model makes is logged with the previous values; the chat shows an Undo button per action.
 - **Service health** — background schedulers record success/failure, and unconfigured optional services show "not configured" rather than failing.
 - **Self-update** — verified installer downloads from the GitHub release feed (or a local folder), install only on request.

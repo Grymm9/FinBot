@@ -270,6 +270,7 @@ declare global {
       onChatReasoning: (cb: (token: string) => void) => () => void
       onChatTool: (cb: (payload: { name: string; summary: string; actionId?: number }) => void) => () => void
       onChatDone: (cb: (full: string) => void) => () => void
+      onChatChanged: (cb: () => void) => () => void
       onChatError: (cb: (message: string) => void) => () => void
       getPathForFile: (file: File) => string
     }

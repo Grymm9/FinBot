@@ -376,6 +376,11 @@ const api = {
     ipcRenderer.on('chat:done', listener)
     return () => ipcRenderer.removeListener('chat:done', listener)
   },
+  onChatChanged: (cb: () => void): (() => void) => {
+    const listener = (): void => cb()
+    ipcRenderer.on('chat:changed', listener)
+    return () => ipcRenderer.removeListener('chat:changed', listener)
+  },
   onChatError: (cb: (message: string) => void): (() => void) => {
     const listener = (_e: IpcRendererEvent, message: string): void => cb(message)
     ipcRenderer.on('chat:error', listener)

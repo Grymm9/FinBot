@@ -286,6 +286,15 @@ CREATE TABLE IF NOT EXISTS service_health (
   consecutive_failures INTEGER NOT NULL DEFAULT 0
 );
 
+CREATE TABLE IF NOT EXISTS discord_threads (
+  thread_id         TEXT PRIMARY KEY,
+  parent_channel_id TEXT NOT NULL,
+  title             TEXT,
+  last_message_id   TEXT,
+  created_at        INTEGER,
+  updated_at        INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS reviews (
   cycle_start TEXT PRIMARY KEY,
   label       TEXT,

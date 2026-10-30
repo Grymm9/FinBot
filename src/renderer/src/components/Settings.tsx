@@ -577,6 +577,11 @@ export default function Settings({
             />
           </label>
         </div>
+        <p className="text-xs text-slate-500">
+          Budget messages are only sent once a category has actually exceeded its budget. The ratio above still controls
+          the pacing warnings shown in the app. With a bot token, replies stay in their Discord thread and the
+          conversation is shared with this AI Advisor, so you can continue it here.
+        </p>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
           <label className={labelCls}>
             Auto-sync every (hours)
