@@ -11,6 +11,7 @@ import { listCycleHistory, topCategoryVariance } from './history'
 import { detectInsights } from './insights'
 import { buildCashFlowForecast } from './forecast'
 import { latestReview } from './reviews'
+import { splitsByTransaction } from './transaction-splits'
 import { REAL_TX } from './filters'
 import { currentCycleRange } from './cycle'
 
@@ -31,8 +32,11 @@ export function buildFinancialContext(): string {
     .all() as Array<{ name: string; current: number; available: number }>
 
   const recentTx = db
-    .prepare(`SELECT date, description, amount FROM transactions WHERE ${REAL_TX} ORDER BY date DESC LIMIT 50`)
-    .all() as Array<{ date: string; description: string; amount: number }>
+    .prepare(
+      `SELECT id, date, description, amount FROM transactions WHERE ${REAL_TX} ORDER BY date DESC, id DESC LIMIT 50`
+    )
+    .all() as Array<{ id: string; date: string; description: string; amount: number }>
+  const recentSplits = splitsByTransaction(recentTx.map((t) => t.id))
 
   const categories = listCategories()
   const budgetStatus = computeBudgetStatus(cycle.start, cycle.end)
@@ -128,7 +132,18 @@ export function buildFinancialContext(): string {
     insights: detectInsights().map((i) => ({ type: i.type, title: i.title, detail: i.detail })),
     forecast: forecastSnapshot(),
     lastCycleReview: latestReview(),
-    recentTransactions: recentTx
+    recentTransactions: recentTx.map((t) => {
+      const splits = recentSplits.get(t.id)
+      return {
+        id: t.id,
+        date: t.date,
+        description: t.description,
+        amount: t.amount,
+        ...(splits && splits.length > 0
+          ? { splits: splits.map((s) => ({ category: s.category, amount: s.amount })) }
+          : {})
+      }
+    })
   }
 
   return JSON.stringify(snapshot, null, 2)

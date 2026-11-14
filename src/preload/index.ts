@@ -32,6 +32,8 @@ import type {
   SyncResult,
   Transaction,
   TransactionImportResult,
+  SplitTransactionInput,
+  SplitTransactionResult,
   UnmatchedMerchant,
   ServiceHealth,
   ForecastSummary,
@@ -268,6 +270,8 @@ const api = {
     accountName?: string
   ): Promise<{ canceled: boolean; fileName?: string | null } & Partial<TransactionImportResult>> =>
     ipcRenderer.invoke('transactions:import-csv', accountName),
+  splitTransaction: (input: SplitTransactionInput): Promise<SplitTransactionResult> =>
+    ipcRenderer.invoke('transactions:split', input),
 
   // subscriptions
   listSubscriptions: (): Promise<{ items: Subscription[]; monthlyTotal: number }> =>

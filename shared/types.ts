@@ -157,9 +157,43 @@ export interface Transaction {
   merchant: string | null
 }
 
+export interface TransactionSplit {
+  category: string
+  /** Positive absolute amount; the parent transaction supplies the sign. */
+  amount: number
+}
+
 export interface TransactionRow extends Transaction {
   accountName: string
   matchedCategory: string | null
+  /** Non-empty when this transaction has been split across categories. */
+  splits: TransactionSplit[]
+  /** False for credits, disabled accounts and loan/asset accounts. */
+  splittable: boolean
+}
+
+export interface SplitTransactionInput {
+  transactionId?: string
+  date?: string
+  description?: string
+  amount?: number
+  splits: Array<{ category: string; amount: number }>
+  replace?: boolean
+}
+
+export interface SplitTransactionResult {
+  ok: boolean
+  summary?: string
+  error?: string
+  transaction?: {
+    id: string
+    date: string
+    description: string
+    amount: number
+  }
+  splits?: TransactionSplit[]
+  /** True when rows were actually written (false for a no-op clear). */
+  changed?: boolean
 }
 
 export interface TransactionSearchResult {

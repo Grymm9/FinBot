@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { Account, Category, TransactionSearchResult } from '@shared/types'
+import type { Account, Category, TransactionRow, TransactionSearchResult } from '@shared/types'
 import { Badge, Button, Card, EmptyState, SectionHeader, Spinner } from './ui'
 import { money, shortDate } from '../lib/format'
 
@@ -21,6 +21,9 @@ export default function Transactions(): JSX.Element {
   const [importAccount, setImportAccount] = useState('')
   const [importNote, setImportNote] = useState('')
   const [importing, setImporting] = useState(false)
+  const [splitEdits, setSplitEdits] = useState<Array<{ category: string; amount: string }>>([])
+  const [splitBusy, setSplitBusy] = useState(false)
+  const [splitNotice, setSplitNotice] = useState('')
 
   useEffect(() => {
     void window.api.listCategories().then(setCategories)
@@ -81,6 +84,79 @@ export default function Transactions(): JSX.Element {
       setImportNote(`Import failed: ${(e as Error).message}`)
     } finally {
       setImporting(false)
+    }
+  }
+
+  const openRow = (r: TransactionRow): void => {
+    if (expanded === r.id) {
+      setExpanded(null)
+      return
+    }
+    setExpanded(r.id)
+    setSplitNotice('')
+    setSplitEdits(
+      r.splits.length > 0
+        ? r.splits.map((s) => ({ category: s.category, amount: s.amount.toFixed(2) }))
+        : [{ category: '', amount: '' }]
+    )
+  }
+
+  const updateSplitLine = (index: number, patch: { category?: string; amount?: string }): void => {
+    setSplitEdits((prev) => prev.map((line, i) => (i === index ? { ...line, ...patch } : line)))
+  }
+
+  const addSplitLine = (): void => setSplitEdits((prev) => [...prev, { category: '', amount: '' }])
+
+  const removeSplitLine = (index: number): void =>
+    setSplitEdits((prev) => (prev.length <= 1 ? prev : prev.filter((_, i) => i !== index)))
+
+  const applySplitResult = (result: { splits?: Array<{ category: string; amount: number }> }): void => {
+    setSplitEdits(
+      result.splits && result.splits.length > 0
+        ? result.splits.map((s) => ({ category: s.category, amount: s.amount.toFixed(2) }))
+        : [{ category: '', amount: '' }]
+    )
+  }
+
+  const saveSplit = async (r: TransactionRow): Promise<void> => {
+    setSplitBusy(true)
+    setSplitNotice('')
+    try {
+      const lines = splitEdits
+        .filter((line) => line.category.trim() && line.amount.trim())
+        .map((line) => ({ category: line.category, amount: Number(line.amount) }))
+      const result = await window.api.splitTransaction({
+        transactionId: r.id,
+        splits: lines,
+        replace: true
+      })
+      if (!result.ok) {
+        setSplitNotice(`❌ ${result.error ?? 'Could not save the split.'}`)
+        return
+      }
+      applySplitResult(result)
+      setSplitNotice(`✅ ${result.summary ?? 'Split saved.'}`)
+      await search()
+    } finally {
+      setSplitBusy(false)
+    }
+  }
+
+  const clearSplit = async (r: TransactionRow): Promise<void> => {
+    if (!confirm(`Remove the split on "${r.description}" and treat it as one transaction again?`)) return
+    setSplitBusy(true)
+    setSplitNotice('')
+    try {
+      const result = await window.api.splitTransaction({ transactionId: r.id, splits: [], replace: true })
+      if (!result.ok) {
+        setSplitNotice(`❌ ${result.error ?? 'Could not clear the split.'}`)
+        return
+      }
+      applySplitResult(result)
+      setSplitNotice(`✅ ${result.summary ?? 'Split cleared.'}`)
+      await search()
+    } finally {
+      setSplitBusy(false)
     }
   }
 
@@ -192,65 +268,192 @@ export default function Transactions(): JSX.Element {
             </div>
 
             <ul className="divide-y divide-white/[0.08]">
-              {result.rows.map((r) => (
-                <li key={r.id}>
-                  <button
-                    onClick={() => setExpanded(expanded === r.id ? null : r.id)}
-                    className="flex w-full items-center justify-between gap-3 py-2 text-left hover:bg-white/[0.03]"
-                  >
-                    <div className="min-w-0">
-                      <p className="truncate text-sm text-slate-200">{r.description}</p>
-                      <p className="truncate text-[11px] text-slate-500">
-                        {shortDate(r.date)} · {r.accountName}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 items-center gap-3">
-                      {r.matchedCategory ? (
-                        <span className="hidden max-w-[10rem] truncate text-xs text-slate-400 sm:block">
-                          {r.matchedCategory}
-                        </span>
-                      ) : (
-                        <Badge tone="warn">unmapped</Badge>
-                      )}
-                      <span
-                        className={`w-24 text-right text-sm font-medium ${
-                          r.amount < 0 ? 'text-slate-200' : 'text-accent'
-                        }`}
-                      >
-                        {money(r.amount)}
-                      </span>
-                    </div>
-                  </button>
+              {result.rows.map((r) => {
+                const splitTotal = splitEdits.reduce((sum, line) => sum + (Number(line.amount) || 0), 0)
+                const splitReady =
+                  splitEdits.length > 0 &&
+                  splitEdits.every((line) => line.category.trim() && Number(line.amount) > 0) &&
+                  Math.round(splitTotal * 100) === Math.round(Math.abs(r.amount) * 100)
 
-                  {expanded === r.id && (
-                    <div className="mb-2 rounded-xl border border-white/[0.1] bg-white/[0.04] p-3">
-                      <p className="mb-2 text-xs text-slate-400">
-                        Merchant: <span className="text-slate-200">{r.merchant ?? '—'}</span> · Bank category:{' '}
-                        <span className="text-slate-200">{r.category ?? '—'}</span>
-                      </p>
-                      <label className="text-xs text-slate-400">
-                        Categorise this merchant from now on
-                        <div className="mt-1 flex gap-2">
-                          <select
-                            value=""
-                            onChange={(e) => {
-                              if (e.target.value) void addRule(r.merchant, r.description, e.target.value)
-                            }}
-                            className={`${fieldCls} flex-1`}
-                          >
-                            <option value="">Choose a category…</option>
-                            {categories.map((c) => (
-                              <option key={c.name} value={c.name}>
-                                {c.name}
-                              </option>
-                            ))}
-                          </select>
-                        </div>
-                      </label>
-                    </div>
-                  )}
-                </li>
-              ))}
+                return (
+                  <li key={r.id}>
+                    <button
+                      onClick={() => openRow(r)}
+                      className="flex w-full items-center justify-between gap-3 py-2 text-left hover:bg-white/[0.03]"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-sm text-slate-200">{r.description}</p>
+                        <p className="truncate text-[11px] text-slate-500">
+                          {shortDate(r.date)} · {r.accountName}
+                        </p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-3">
+                        {r.splits.length > 0 ? (
+                          <Badge tone="good">split · {r.splits.length}</Badge>
+                        ) : r.matchedCategory ? (
+                          <span className="hidden max-w-[10rem] truncate text-xs text-slate-400 sm:block">
+                            {r.matchedCategory}
+                          </span>
+                        ) : (
+                          <Badge tone="warn">unmapped</Badge>
+                        )}
+                        <span
+                          className={`w-24 text-right text-sm font-medium ${
+                            r.amount < 0 ? 'text-slate-200' : 'text-accent'
+                          }`}
+                        >
+                          {money(r.amount)}
+                        </span>
+                      </div>
+                    </button>
+
+                    {r.splits.length > 0 && (
+                      <div className="mb-2 ml-4 space-y-0.5 border-l border-accent/30 pl-3">
+                        {r.splits.map((s) => (
+                          <div key={s.category} className="flex items-center justify-between gap-3 text-[11px]">
+                            <span className="truncate text-slate-400">{s.category}</span>
+                            <span className="shrink-0 text-slate-300">{money(s.amount)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {expanded === r.id && (
+                      <div className="mb-2 space-y-3 rounded-xl border border-white/[0.1] bg-white/[0.04] p-3">
+                        <p className="text-xs text-slate-400">
+                          Merchant: <span className="text-slate-200">{r.merchant ?? '—'}</span> · Bank category:{' '}
+                          <span className="text-slate-200">{r.category ?? '—'}</span>
+                        </p>
+
+                        {r.amount < 0 && (r.splittable || r.splits.length > 0) && (
+                          <div className="space-y-2 rounded-lg border border-white/[0.08] bg-white/[0.02] p-3">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <p className="text-xs font-medium text-slate-300">Split across categories</p>
+                              <p className="text-[11px] text-slate-500">
+                                Transaction total {money(Math.abs(r.amount))}
+                              </p>
+                            </div>
+
+                            {r.splittable ? (
+                              <>
+                                {splitEdits.map((line, i) => (
+                                  <div key={i} className="flex items-center gap-2">
+                                    <select
+                                      value={line.category}
+                                      onChange={(e) => updateSplitLine(i, { category: e.target.value })}
+                                      className={`${fieldCls} min-w-0 flex-1`}
+                                    >
+                                      <option value="">Choose a category…</option>
+                                      {categories.map((c) => (
+                                        <option key={c.name} value={c.name}>
+                                          {c.name}
+                                        </option>
+                                      ))}
+                                    </select>
+                                    <input
+                                      type="number"
+                                      min="0.01"
+                                      step="0.01"
+                                      value={line.amount}
+                                      onChange={(e) => updateSplitLine(i, { amount: e.target.value })}
+                                      placeholder="0.00"
+                                      className={`${fieldCls} w-24 text-right`}
+                                    />
+                                    <button
+                                      onClick={() => removeSplitLine(i)}
+                                      disabled={splitEdits.length <= 1}
+                                      className="shrink-0 rounded-md px-2 py-1 text-xs text-slate-500 hover:bg-danger/15 hover:text-danger disabled:opacity-30"
+                                      title="Remove this split line"
+                                    >
+                                      ✕
+                                    </button>
+                                  </div>
+                                ))}
+
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <button
+                                    onClick={addSplitLine}
+                                    className="text-[11px] font-medium text-accent hover:underline"
+                                  >
+                                    + Add category
+                                  </button>
+                                  <span className={`text-[11px] ${splitReady ? 'text-accent' : 'text-warn'}`}>
+                                    Split total {money(splitTotal)} / {money(Math.abs(r.amount))}
+                                  </span>
+                                </div>
+                              </>
+                            ) : (
+                              <p className="text-[11px] text-slate-500">
+                                This account can no longer be edited (loan/asset or excluded account). You can still
+                                clear the existing split.
+                              </p>
+                            )}
+
+                            <div className="flex flex-wrap items-center gap-2 pt-1">
+                              {r.splittable && (
+                                <Button
+                                  onClick={() => void saveSplit(r)}
+                                  disabled={splitBusy || !splitReady}
+                                  className="px-4 py-2 text-xs"
+                                >
+                                  {splitBusy ? 'Saving…' : r.splits.length > 0 ? 'Update split' : 'Save split'}
+                                </Button>
+                              )}
+                              {r.splits.length > 0 && (
+                                <Button
+                                  variant="danger"
+                                  onClick={() => void clearSplit(r)}
+                                  disabled={splitBusy}
+                                  className="px-4 py-2 text-xs"
+                                >
+                                  Clear split
+                                </Button>
+                              )}
+                            </div>
+
+                            {splitNotice && (
+                              <p
+                                className={`text-xs ${
+                                  splitNotice.startsWith('❌') ? 'text-danger' : 'text-accent'
+                                }`}
+                              >
+                                {splitNotice}
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {r.amount < 0 && !r.splittable && r.splits.length === 0 && (
+                          <p className="text-[11px] text-slate-500">
+                            Splitting is not available for this account (loan/asset accounts and excluded accounts
+                            cannot be split).
+                          </p>
+                        )}
+
+                        <label className="block text-xs text-slate-400">
+                          Categorise this merchant from now on
+                          <div className="mt-1 flex gap-2">
+                            <select
+                              value=""
+                              onChange={(e) => {
+                                if (e.target.value) void addRule(r.merchant, r.description, e.target.value)
+                              }}
+                              className={`${fieldCls} flex-1`}
+                            >
+                              <option value="">Choose a category…</option>
+                              {categories.map((c) => (
+                                <option key={c.name} value={c.name}>
+                                  {c.name}
+                                </option>
+                              ))}
+                            </select>
+                          </div>
+                        </label>
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           </>
         )}

@@ -25,6 +25,7 @@ import {
   snapshotRuleByKeyword,
   latestRuleId
 } from './ai-actions'
+import { splitTransaction } from './transaction-splits'
 
 export interface ToolResult {
   summary: string
@@ -90,6 +91,50 @@ const TOOL_DEFS: AnyRecord[] = [
           category: { type: 'string', description: 'Budget category to map it to.' }
         },
         required: ['keyword', 'category']
+      }
+    }
+  },
+  {
+    type: 'function',
+    function: {
+      name: 'split_transaction',
+      description:
+        'Split one debit transaction across multiple budget categories (e.g. a supermarket shop that includes groceries and household items). Split amounts are positive absolute values and must add up to the transaction amount. A transaction that is already split must be replaced explicitly with replace: true; send an empty splits array with replace: true to clear a split.',
+      parameters: {
+        type: 'object',
+        properties: {
+          transaction_id: {
+            type: 'string',
+            description: 'Transaction id from the financial context (preferred).'
+          },
+          date: { type: 'string', description: 'YYYY-MM-DD, used with description + amount when no id is available.' },
+          description: {
+            type: 'string',
+            description: 'Transaction description, used with date + amount when no id is available.'
+          },
+          amount: {
+            type: 'number',
+            description: 'Signed transaction amount, used with date + description when no id is available.'
+          },
+          splits: {
+            type: 'array',
+            description:
+              'Category portions. Amounts are positive and must total the absolute transaction amount. Empty with replace: true clears the split.',
+            items: {
+              type: 'object',
+              properties: {
+                category: { type: 'string', description: 'Existing budget category name.' },
+                amount: { type: 'number', description: 'Positive portion of the transaction in NZD.' }
+              },
+              required: ['category', 'amount']
+            }
+          },
+          replace: {
+            type: 'boolean',
+            description: 'Replace an existing split (or clear it when splits is empty). Required if already split.'
+          }
+        },
+        required: ['splits']
       }
     }
   },
@@ -369,6 +414,43 @@ export async function executeTool(name: string, args: AnyRecord): Promise<ToolRe
           category,
           affectedCount: affected.length,
           affectedTransactions: affected.slice(0, 50)
+        },
+        actionId
+      }
+    }
+    case 'split_transaction': {
+      const result = splitTransaction({
+        transactionId: args.transaction_id,
+        date: args.date,
+        description: args.description,
+        amount: args.amount,
+        splits: args.splits,
+        replace: args.replace
+      })
+      if (!result.ok) {
+        return {
+          summary: result.error ?? 'Could not split that transaction.',
+          data: { error: result.error, transaction: result.transaction, splits: result.splits }
+        }
+      }
+      if (result.changed === false) {
+        return {
+          summary: result.summary ?? 'Nothing to change.',
+          data: { transaction: result.transaction, splits: result.splits ?? [] }
+        }
+      }
+      const actionId = logAction({
+        tool: name,
+        summary: result.summary ?? 'Split transaction',
+        args,
+        undo: { kind: 'splits', key: result.transaction?.id ?? '', row: result.previousSplits ?? null }
+      })
+      return {
+        summary: result.summary ?? 'Split transaction',
+        data: {
+          transaction: result.transaction,
+          splits: result.splits ?? [],
+          total: (result.splits ?? []).reduce((s, line) => s + line.amount, 0)
         },
         actionId
       }

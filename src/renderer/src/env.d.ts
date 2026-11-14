@@ -31,6 +31,8 @@ import type {
   SyncResult,
   Transaction,
   TransactionImportResult,
+  SplitTransactionInput,
+  SplitTransactionResult,
   UnmatchedMerchant,
   ServiceHealth,
   ForecastSummary,
@@ -205,6 +207,7 @@ declare global {
       importTransactionsCsv: (
         accountName?: string
       ) => Promise<{ canceled: boolean; fileName?: string | null } & Partial<TransactionImportResult>>
+      splitTransaction: (input: SplitTransactionInput) => Promise<SplitTransactionResult>
 
       listSubscriptions: () => Promise<{ items: Subscription[]; monthlyTotal: number }>
       refreshSubscriptions: () => Promise<{ items: Subscription[]; monthlyTotal: number }>

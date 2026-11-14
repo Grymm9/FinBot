@@ -289,10 +289,34 @@ export function computeBudgetStatus(start: string, end: string): BudgetStatus[] 
 
   const rows = db
     .prepare(
-      `SELECT date, description, merchant, amount, category FROM transactions
+      `SELECT id, date, description, merchant, amount, category FROM transactions
        WHERE ${REAL_TX} AND amount < 0 AND date >= ? AND date < ?`
     )
-    .all(start, end) as Array<{ date: string; description: string; merchant: string | null; amount: number; category: string | null }>
+    .all(start, end) as Array<{
+    id: string
+    date: string
+    description: string
+    merchant: string | null
+    amount: number
+    category: string | null
+  }>
+
+  // A split transaction contributes only its portions, not the full amount to
+  // whichever category the rules would otherwise resolve.
+  const splitRows = db
+    .prepare(
+      `SELECT s.transaction_id AS id, s.category, s.amount
+       FROM transaction_splits s
+       JOIN transactions ON transactions.id = s.transaction_id
+       WHERE ${REAL_TX} AND transactions.amount < 0 AND transactions.date >= ? AND transactions.date < ?`
+    )
+    .all(start, end) as Array<{ id: string; category: string; amount: number }>
+  const splitsByTx = new Map<string, Array<{ category: string; amount: number }>>()
+  for (const s of splitRows) {
+    const list = splitsByTx.get(s.id) ?? []
+    list.push({ category: s.category, amount: s.amount })
+    splitsByTx.set(s.id, list)
+  }
 
   const incoming = split.size > 0
     ? (db
@@ -308,6 +332,16 @@ export function computeBudgetStatus(start: string, end: string): BudgetStatus[] 
   const unmatched = new Map<string, number>()
 
   for (const r of rows) {
+    const portions = splitsByTx.get(r.id)
+    if (portions) {
+      for (const p of portions) {
+        const af = activeFromMap.get(p.category)
+        if (af && r.date < af) continue
+        spent.set(p.category, (spent.get(p.category) ?? 0) + p.amount)
+      }
+      continue
+    }
+
     const c = matchCategory(r.description, r.merchant, r.category)
     if (c) {
       const af = activeFromMap.get(c)
@@ -360,7 +394,8 @@ export function listUnmatchedMerchants(limit = 40): UnmatchedMerchant[] {
   const rows = db
     .prepare(
       `SELECT merchant, description, amount FROM transactions
-       WHERE ${REAL_TX} AND amount < 0 AND date >= ? AND date < ?`
+       WHERE ${REAL_TX} AND amount < 0 AND date >= ? AND date < ?
+         AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = transactions.id)`
     )
     .all(start, end) as Array<{ merchant: string | null; description: string; amount: number }>
 
@@ -396,6 +431,7 @@ export function listUnmatchedTransactions(
     .prepare(
       `SELECT id, date, description, merchant, amount FROM transactions
        WHERE ${REAL_TX} AND amount < 0 AND date >= ? AND date < ?
+         AND NOT EXISTS (SELECT 1 FROM transaction_splits s WHERE s.transaction_id = transactions.id)
        ORDER BY date DESC LIMIT ?`
     )
     .all(start, end, limit) as Array<{

@@ -47,6 +47,7 @@ import {
 } from './services/ai-alerts'
 import { listUserReminders, createUserReminder, deleteUserReminder } from './services/reminders'
 import { searchTransactions } from './services/transactions'
+import { splitTransaction } from './services/transaction-splits'
 import {
   listSubscriptions,
   refreshSubscriptions,
@@ -96,7 +97,7 @@ import {
   memoryBlock,
   recordConversation
 } from './services/memory'
-import type { ChatMessage, DealCategory, DealPlanInput } from '@shared/types'
+import type { ChatMessage, DealCategory, DealPlanInput, SplitTransactionInput } from '@shared/types'
 
 const CSV_FILTERS = [{ name: 'CSV files', extensions: ['csv'] }]
 const PDF_FILTERS = [{ name: 'PDF files', extensions: ['pdf'] }]
@@ -392,6 +393,7 @@ export function registerIpcHandlers(): void {
       }
     ) => searchTransactions(filter)
   )
+  ipcMain.handle('transactions:split', (_e, input: SplitTransactionInput) => splitTransaction(input))
 
   // ----------------------------------------------------------- subscriptions
   ipcMain.handle('subscriptions:list', () => ({

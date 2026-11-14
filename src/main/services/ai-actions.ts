@@ -17,6 +17,7 @@ export type UndoDescriptor =
   | { kind: 'reminder'; key: number; row: Record<string, unknown> | null }
   | { kind: 'memory'; key: number; row: Record<string, unknown> | null }
   | { kind: 'goal'; key: number; row: Record<string, unknown> | null }
+  | { kind: 'splits'; key: string; row: Array<{ category: string; amount: number }> | null }
   | { kind: 'none' }
 
 export function logAction(entry: {
@@ -186,6 +187,20 @@ function applyUndo(undo: UndoDescriptor): string {
       )
       return 'Restored the goal.'
 
+    case 'splits': {
+      db.prepare('DELETE FROM transaction_splits WHERE transaction_id = ?').run(undo.key)
+      if (undo.row && undo.row.length > 0) {
+        const insert = db.prepare(
+          'INSERT INTO transaction_splits (transaction_id, category, amount, created_at) VALUES (?, ?, ?, ?)'
+        )
+        for (const line of undo.row) {
+          insert.run(undo.key, String(line.category), Number(line.amount), Date.now())
+        }
+        return `Restored the previous split on transaction ${undo.key}.`
+      }
+      return `Removed the split from transaction ${undo.key}.`
+    }
+
     default:
       return 'Nothing to undo for this action.'
   }
@@ -233,6 +248,14 @@ export function snapshotGoal(id: number): Record<string, unknown> | null {
       .prepare('SELECT id, name, target_amount, saved_amount, target_date, created_at, updated_at FROM goals WHERE id = ?')
       .get(id) as Record<string, unknown> | undefined) ?? null
   )
+}
+
+/** Existing split rows for a transaction, or null when it is not split. */
+export function snapshotSplits(transactionId: string): Array<{ category: string; amount: number }> | null {
+  const rows = getDb()
+    .prepare('SELECT category, amount FROM transaction_splits WHERE transaction_id = ? ORDER BY id')
+    .all(transactionId) as Array<{ category: string; amount: number }>
+  return rows.length > 0 ? rows : null
 }
 
 /** Most recent rule id for a keyword + category, created within the last few seconds. */

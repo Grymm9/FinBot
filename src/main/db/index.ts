@@ -32,6 +32,16 @@ CREATE INDEX IF NOT EXISTS idx_tx_date    ON transactions(date);
 CREATE INDEX IF NOT EXISTS idx_tx_account ON transactions(account_id);
 CREATE INDEX IF NOT EXISTS idx_tx_desc    ON transactions(description);
 
+CREATE TABLE IF NOT EXISTS transaction_splits (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  transaction_id TEXT NOT NULL REFERENCES transactions(id) ON DELETE CASCADE,
+  category       TEXT NOT NULL,
+  amount         REAL NOT NULL,
+  created_at     INTEGER,
+  UNIQUE(transaction_id, category)
+);
+CREATE INDEX IF NOT EXISTS idx_tx_splits_tx ON transaction_splits(transaction_id);
+
 CREATE TABLE IF NOT EXISTS balances (
   account_id TEXT PRIMARY KEY,
   current    REAL,
