@@ -1,6 +1,6 @@
 import { getDb } from '../db'
 import { listCategories, computeBudgetStatus, totalReimbursements } from './budget'
-import { listGroups } from './groups'
+import { listCategoryDestinations, listGroups } from './groups'
 import { listPolicies } from './insurance'
 import { listEmails } from './email'
 import { listUserReminders } from './reminders'
@@ -40,6 +40,11 @@ export function buildFinancialContext(): string {
 
   const categories = listCategories()
   const budgetStatus = computeBudgetStatus(cycle.start, cycle.end)
+  const categoryDestinations = new Map(
+    listCategoryDestinations().map((entry) => [entry.category, entry.destinations])
+  )
+  const accountNames = destinationAccountNames()
+  const categorySchedules = new Map(categories.map((c) => [c.name, c.frequency]))
   const policies = listPolicies()
   const subs = listSubscriptions()
   const cycles = listCycleHistory(3)
@@ -72,7 +77,24 @@ export function buildFinancialContext(): string {
       totalSpent: round2(budgetStatus.reduce((s, c) => s + c.spent, 0)),
       totalRemaining: round2(budgetStatus.reduce((s, c) => s + c.budgeted - c.spent, 0)),
       categories: categories.map((c) => c.name),
-      status: budgetStatus
+      status: budgetStatus.map((c) => {
+        const routed = categoryDestinations.get(c.category) ?? []
+        const schedule = categorySchedules.get(c.category) ?? 'monthly'
+        const destinations = routed.map((d) => ({
+          accountName: d.accountNumber ? accountNames.get(compactAccountNumber(d.accountNumber)) ?? null : null,
+          accountNumber: d.accountNumber,
+          transferLabel: d.transferLabel,
+          amount: d.amount ?? c.budgeted,
+          schedule
+        }))
+        return {
+          ...c,
+          // One routing object in the usual case; an array when the item is
+          // split across several destination accounts; null when it has none.
+          destination:
+            destinations.length === 0 ? null : destinations.length === 1 ? destinations[0] : destinations
+        }
+      })
     },
     groups: listGroups().map((g) => ({
       items: g.items,
@@ -151,6 +173,32 @@ export function buildFinancialContext(): string {
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100
+}
+
+const compactAccountNumber = (s: string): string => s.toLowerCase().replace(/[^a-z0-9]/g, '')
+
+/**
+ * Map a bank account number to its display name using the Akahu `raw` payload
+ * already stored on each account. Destination routing only stores the number,
+ * so this is how we add the name without changing any schema.
+ */
+function destinationAccountNames(): Map<string, string> {
+  const rows = getDb().prepare('SELECT name, raw FROM accounts').all() as Array<{
+    name: string
+    raw: string | null
+  }>
+  const names = new Map<string, string>()
+  for (const row of rows) {
+    try {
+      const raw = JSON.parse(row.raw ?? '{}') as { formatted_account?: unknown }
+      if (typeof raw.formatted_account === 'string' && raw.formatted_account.trim()) {
+        names.set(compactAccountNumber(raw.formatted_account), row.name)
+      }
+    } catch {
+      // A malformed raw payload should not break the AI context.
+    }
+  }
+  return names
 }
 
 /** Forecast for the prompt snapshot — never let a data problem break chat. */
