@@ -678,6 +678,23 @@ export default function Onboarding({ onDone }: { onDone: () => void }): JSX.Elem
                       </datalist>
                     </label>
                     <label className={labelCls}>
+                      Reasoning model
+                      <input
+                        list="onboarding-ai-reasoning-models"
+                        value={ai.reasoningModel}
+                        onChange={(e) => setAi({ ...ai, reasoningModel: e.target.value })}
+                        placeholder={aiProviderPreset(ai.provider).models[0]?.id || 'model id'}
+                        className={`${fieldCls} mt-1`}
+                      />
+                      <datalist id="onboarding-ai-reasoning-models">
+                        {aiProviderPreset(ai.provider).models.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.label}
+                          </option>
+                        ))}
+                      </datalist>
+                    </label>
+                    <label className={labelCls}>
                       Base URL
                       <input
                         value={ai.baseUrl}

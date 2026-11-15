@@ -489,6 +489,23 @@ export default function Settings({
             </datalist>
           </label>
           <label className={labelCls}>
+            Reasoning model
+            <input
+              list="ai-reasoning-model-options"
+              value={fields.reasoningModel}
+              onChange={(e) => setFields({ ...fields, reasoningModel: e.target.value })}
+              placeholder={aiPreset.models[0]?.id || 'model id'}
+              className={inputCls}
+            />
+            <datalist id="ai-reasoning-model-options">
+              {aiPreset.models.map((m) => (
+                <option key={m.id} value={m.id}>
+                  {m.label}
+                </option>
+              ))}
+            </datalist>
+          </label>
+          <label className={labelCls}>
             Base URL
             <input
               value={fields.baseUrl}
@@ -498,6 +515,15 @@ export default function Settings({
             />
           </label>
         </div>
+        <p className="text-xs text-slate-500">
+          Two models work together. <span className="text-slate-400">Model</span> runs the tool calls and actions
+          (recategorizing, splitting, budget lookups) — keep it tool-capable, e.g.{' '}
+          <span className="text-slate-400">deepseek-chat</span>. <span className="text-slate-400">Reasoning model</span>{' '}
+          writes the long-form answers that don&apos;t need tools, e.g.{' '}
+          <span className="text-slate-400">deepseek-reasoner</span>. Blank Reasoning falls back to your
+          provider&apos;s default (DeepSeek: <span className="text-slate-400">deepseek-reasoner</span>; other
+          providers: the Model). Both fields suggest your provider&apos;s models when you click into them and type.
+        </p>
         <div className="flex flex-wrap items-center gap-3">
           <Button variant="secondary" onClick={testAi} disabled={saving}>
             Test connection
