@@ -95,6 +95,8 @@ import {
   listConversations,
   recentConversationMessages,
   memoryBlock,
+  conversationSummaryBlock,
+  refreshConversationSummary,
   recordConversation
 } from './services/memory'
 import type { ChatMessage, DealCategory, DealPlanInput, SplitTransactionInput } from '@shared/types'
@@ -495,6 +497,9 @@ export function registerIpcHandlers(): void {
     // The chat panel shows the shared app + Discord timeline, so Clear clears
     // both surfaces (Discord messages themselves are not deleted remotely).
     getDb().prepare('DELETE FROM chat_logs').run()
+    // Do not let a stale rolling summary outlive the conversation it describes.
+    setSetting('CONVERSATION_SUMMARY', '')
+    setSetting('CONVERSATION_SUMMARY_UPTO', '')
   })
 
   // ------------------------------------------------------------------ memory
@@ -527,9 +532,11 @@ export function registerIpcHandlers(): void {
     recordConversation('app', 'user', userText)
 
     const context = buildFinancialContext()
+    const summaryBlock = conversationSummaryBlock()
     const messages = [
       { role: 'system' as const, content: baseSystemPrompt() },
       { role: 'system' as const, content: memoryBlock() },
+      ...(summaryBlock ? [{ role: 'system' as const, content: summaryBlock }] : []),
       { role: 'system' as const, content: `<financial_context>\n${context}\n</financial_context>` },
       ...dbChatHistory().map((m) => ({ role: m.role, content: m.content }))
     ]
@@ -554,6 +561,8 @@ export function registerIpcHandlers(): void {
         }
       })
       recordConversation('app', 'assistant', reply.content)
+      // Fold older turns into the rolling summary in the background.
+      void refreshConversationSummary()
       if (!event.sender.isDestroyed()) {
         event.sender.send('chat:done', reply.content)
       }

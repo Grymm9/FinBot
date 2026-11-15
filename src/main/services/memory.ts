@@ -3,6 +3,7 @@ import { isAiConfigured } from './ai-config'
 import { getSetting, setSetting } from './settings'
 import { recordFail, recordOk } from './health'
 import { quickChat } from './llm'
+import { trimConversationWindow } from './conversation-window'
 import type { ConversationEntry, Memory, MemoryKind, MemorySearchResult } from '@shared/types'
 
 /**
@@ -24,7 +25,17 @@ const MAX_CONTENT = 400
 const MIN_DISTILL_MESSAGES = 6
 const DISTILL_TRANSCRIPT_CHARS = 12_000
 const CONTEXT_MEMORY_LIMIT = 40
-const WINDOW_MESSAGES = 24
+
+/**
+ * How many recent turns are sent verbatim. Older turns are folded into a
+ * rolling summary (see `refreshConversationSummary`) so a long conversation
+ * doesn't silently forget its earlier decisions.
+ */
+const WINDOW_MESSAGES = 60
+const SUMMARY_TRIGGER = 12
+const SUMMARY_BATCH = 80
+const SUMMARY_MAX_CHARS = 12_000
+const SUMMARY_MAX_LENGTH = 4_000
 
 interface MemoryRow {
   id: number
@@ -158,22 +169,130 @@ export function deleteMemory(id: number): boolean {
 // Conversation window (one merged timeline for app + Discord)
 // ---------------------------------------------------------------------------
 
+interface ConversationRow {
+  id: number
+  channel: string
+  role: string
+  content: string
+}
+
+/**
+ * Newest-first slice of the conversation that is sent verbatim. A character
+ * cap keeps a wall of pasted text from crowding out the financial context.
+ */
+function recentWindowRows(limit = WINDOW_MESSAGES): ConversationRow[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT id, channel, role, content FROM chat_logs
+       WHERE role IN ('user', 'assistant') AND content NOT LIKE '[error]%'
+       ORDER BY created_at DESC, id DESC LIMIT ?`
+    )
+    .all(limit) as ConversationRow[]
+
+  return trimConversationWindow(rows)
+}
+
 /** The tail of the conversation, ready to splice into the message array. */
 export function recentConversationMessages(
   limit = WINDOW_MESSAGES
 ): Array<{ role: 'user' | 'assistant'; content: string }> {
-  const rows = getDb()
-    .prepare(
-      `SELECT channel, role, content FROM chat_logs
-       WHERE role IN ('user', 'assistant') AND content NOT LIKE '[error]%'
-       ORDER BY created_at DESC, id DESC LIMIT ?`
-    )
-    .all(limit) as Array<{ channel: string; role: string; content: string }>
+  return recentWindowRows(limit)
+    .reverse()
+    .map((r) => ({
+      role: r.role === 'assistant' ? ('assistant' as const) : ('user' as const),
+      content: r.channel === 'discord' && r.role === 'user' ? `[via Discord] ${r.content}` : r.content
+    }))
+}
 
-  return rows.reverse().map((r) => ({
-    role: r.role === 'assistant' ? ('assistant' as const) : ('user' as const),
-    content: r.channel === 'discord' && r.role === 'user' ? `[via Discord] ${r.content}` : r.content
-  }))
+// ---------------------------------------------------------------------------
+// Rolling summary of turns older than the verbatim window
+// ---------------------------------------------------------------------------
+
+const SUMMARY_PROMPT = `You maintain the rolling summary of an ongoing conversation between a user and FinanceBot, their personal finance assistant.
+
+Rewrite the summary so the assistant can stay consistent in later turns. Preserve:
+- the user's goals, decisions and constraints
+- names, dates, amounts, accounts, categories and plans that were discussed
+- preferences and how the user wants to be advised
+- open questions, unfinished tasks, and options that were considered and rejected
+
+Merge the previous summary with the new messages. Drop greetings, filler and generic advice. Do not invent details. Use short bullet points in the third person and keep it under 250 words. If nothing important happened, return the previous summary unchanged.`
+
+/** Formatted rolling summary for the system prompt (empty when none yet). */
+export function conversationSummaryBlock(): string {
+  const summary = getSetting('CONVERSATION_SUMMARY').trim()
+  if (!summary) return ''
+  return `<conversation_summary>\nEarlier in this conversation:\n${summary}\n</conversation_summary>`
+}
+
+let summaryInFlight = false
+
+/**
+ * Fold conversation turns that have fallen out of the recent window into the
+ * rolling summary. Runs after a reply, at most once at a time, and only when
+ * there is enough new material to justify a cheap model call.
+ */
+export async function refreshConversationSummary(force = false): Promise<boolean> {
+  if (summaryInFlight || !isAiConfigured()) return false
+  summaryInFlight = true
+
+  try {
+    const db = getDb()
+    const window = recentWindowRows()
+    if (window.length === 0) return false
+
+    // Everything older than the oldest message still sent verbatim.
+    const cutoffId = window[window.length - 1].id
+    const cursor = Number(getSetting('CONVERSATION_SUMMARY_UPTO') || '0')
+    if (cutoffId <= cursor) return false
+
+    const pending = (
+      db
+        .prepare(
+          `SELECT COUNT(*) AS n FROM chat_logs
+           WHERE id > ? AND id < ? AND role IN ('user', 'assistant') AND content NOT LIKE '[error]%'`
+        )
+        .get(cursor, cutoffId) as { n: number }
+    ).n
+    if (pending === 0 || (!force && pending < SUMMARY_TRIGGER)) return false
+
+    const rows = db
+      .prepare(
+        `SELECT id, channel, role, content FROM chat_logs
+         WHERE id > ? AND id < ? AND role IN ('user', 'assistant') AND content NOT LIKE '[error]%'
+         ORDER BY id ASC LIMIT ?`
+      )
+      .all(cursor, cutoffId, SUMMARY_BATCH) as ConversationRow[]
+    if (rows.length === 0) return false
+
+    let transcript = rows
+      .map((r) => {
+        const who = r.role === 'assistant' ? 'Assistant' : r.channel === 'discord' ? 'User (Discord)' : 'User'
+        return `${who}: ${r.content}`
+      })
+      .join('\n')
+    if (transcript.length > SUMMARY_MAX_CHARS) transcript = transcript.slice(-SUMMARY_MAX_CHARS)
+
+    const previous = getSetting('CONVERSATION_SUMMARY').trim()
+    const summary = await quickChat([
+      { role: 'system', content: SUMMARY_PROMPT },
+      {
+        role: 'user',
+        content: `Previous summary:\n${previous || '(none yet)'}\n\nNew messages:\n${transcript}\n\nUpdated summary:`
+      }
+    ])
+    const text = summary.trim()
+    if (!text) return false
+
+    setSetting('CONVERSATION_SUMMARY', text.slice(0, SUMMARY_MAX_LENGTH))
+    setSetting('CONVERSATION_SUMMARY_UPTO', String(rows[rows.length - 1].id))
+    return true
+  } catch (e) {
+    console.error('Conversation summary failed:', e)
+    return false
+  } finally {
+    summaryInFlight = false
+  }
 }
 
 /** Raw conversation rows for the Memory page. */

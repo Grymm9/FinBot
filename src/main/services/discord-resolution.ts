@@ -12,7 +12,7 @@ import { forgetThread, listThreads, rememberThread, setThreadCursor } from './di
 import { listUnmatchedTransactions, addRule } from './budget'
 import { buildFinancialContext } from './context'
 import { streamChat, baseSystemPrompt } from './deepseek'
-import { memoryBlock, recentConversationMessages, recordConversation } from './memory'
+import { memoryBlock, recentConversationMessages, conversationSummaryBlock, refreshConversationSummary, recordConversation } from './memory'
 
 interface PendingTx {
   id: string
@@ -104,10 +104,12 @@ function applyMappingReply(content: string): boolean {
 async function replyToDiscord(msg: DiscordMessage): Promise<void> {
   const content = (msg.content ?? '').trim()
   const context = buildFinancialContext()
+  const summaryBlock = conversationSummaryBlock()
   const reply = await streamChat({
     messages: [
       { role: 'system', content: baseSystemPrompt() },
       { role: 'system', content: memoryBlock() },
+      ...(summaryBlock ? [{ role: 'system' as const, content: summaryBlock }] : []),
       { role: 'system', content: `<financial_context>\n${context}\n</financial_context>` },
       // Shared timeline: this includes what was said in the app as well.
       ...recentConversationMessages().map((m) => ({ role: m.role, content: m.content })),
@@ -120,6 +122,7 @@ async function replyToDiscord(msg: DiscordMessage): Promise<void> {
   // Persist into the single unified timeline so both surfaces share memory.
   recordConversation('discord', 'user', content)
   if (text) recordConversation('discord', 'assistant', text)
+  void refreshConversationSummary()
 
   if (!text) return
   const channelId = msg.channel_id ?? getSetting('DISCORD_CHANNEL_ID')
