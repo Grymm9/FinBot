@@ -161,7 +161,7 @@ You can also configure everything from the **Settings** tab inside the app (valu
 ### Getting your tokens
 
 - **Akahu** — sign up at [my.akahu.nz](https://my.akahu.nz), create an app, then generate a **Personal App** (app token + user token) linked to your bank.
-- **DeepSeek / ChatGPT / Claude / Gemini** — choose the provider in **Settings → AI advisor** (or the setup assistant) and paste a key from [platform.deepseek.com](https://platform.deepseek.com), [platform.openai.com](https://platform.openai.com/api-keys), [console.anthropic.com](https://console.anthropic.com) or [aistudio.google.com](https://aistudio.google.com/apikey). Any other OpenAI-compatible endpoint can be used via **Other**.
+- **DeepSeek / ChatGPT / Claude / Gemini / OpenRouter** — choose the provider in **Settings → AI advisor** (or the setup assistant) and paste a key from [platform.deepseek.com](https://platform.deepseek.com), [platform.openai.com](https://platform.openai.com/api-keys), [console.anthropic.com](https://console.anthropic.com), [aistudio.google.com](https://aistudio.google.com/apikey) or [openrouter.ai/keys](https://openrouter.ai/keys). OpenRouter also gives you one key for many models, including reasoning models like DeepSeek R1. Any other OpenAI-compatible endpoint can be used via **Other**.
 - **Discord** — Server Settings → Integrations → Webhooks → New Webhook → copy the URL.
 
 > **Backups** — daily snapshots are written to `Documents\FinanceBot Backups` (packaged) or the project's `Backup` folder (development). Change the folder, open it, or import a backup file from **Settings → Data & backups**. Restoring takes a safety snapshot of the current data first.

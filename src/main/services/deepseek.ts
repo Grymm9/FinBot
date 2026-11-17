@@ -161,9 +161,12 @@ async function streamReasoning(
           content += delta.content
           opts.onToken(delta.content)
         }
-        if (delta?.reasoning_content) {
-          reasoning += delta.reasoning_content
-          opts.onReasoning?.(delta.reasoning_content)
+        // DeepSeek calls it reasoning_content; OpenRouter and some other
+        // OpenAI-compatible gateways send the same thinking stream as `reasoning`.
+        const reasoningChunk = delta?.reasoning_content ?? delta?.reasoning
+        if (reasoningChunk) {
+          reasoning += reasoningChunk
+          opts.onReasoning?.(reasoningChunk)
         }
       } catch {
         // ignore keep-alive

@@ -55,7 +55,7 @@ const STEPS: Step[] = [
     label: 'AI helper',
     title: 'Optional: add the AI advisor',
     blurb:
-      'Connect the AI you already use — DeepSeek, ChatGPT (OpenAI), Claude or Gemini. The chat can read your budget and transaction snapshot to answer questions and make changes you approve. It needs your own API key.'
+      'Connect the AI you already use — DeepSeek, OpenRouter, ChatGPT (OpenAI), Claude or Gemini. The chat can read your budget and transaction snapshot to answer questions and make changes you approve. It needs your own API key.'
   },
   {
     id: 'alerts',
@@ -244,7 +244,9 @@ export default function Onboarding({ onDone }: { onDone: () => void }): JSX.Elem
     await window.api.setSetting('AI_BASE_URL', ai.baseUrl.trim())
     await window.api.setSetting(
       'AI_REASONING_MODEL',
-      ai.reasoningModel.trim() || (ai.provider === 'deepseek' ? 'deepseek-reasoner' : ai.model.trim())
+      ai.reasoningModel.trim() ||
+        aiProviderPreset(ai.provider).defaultReasoningModel ||
+        ai.model.trim()
     )
   }
 
@@ -631,8 +633,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }): JSX.Elem
                             provider: preset.id,
                             model: preset.models[0]?.id ?? '',
                             baseUrl: preset.baseUrl,
-                            reasoningModel:
-                              preset.id === 'deepseek' ? 'deepseek-reasoner' : (preset.models[0]?.id ?? '')
+                            reasoningModel: preset.defaultReasoningModel || preset.models[0]?.id || ''
                           })
                           setAiMsg('')
                         }}

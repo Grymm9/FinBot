@@ -112,7 +112,8 @@ export default function Settings({
     sets.push([
       'AI_REASONING_MODEL',
       fields.reasoningModel.trim() ||
-        (fields.aiProvider === 'deepseek' ? 'deepseek-reasoner' : fields.model.trim())
+        aiProviderPreset(fields.aiProvider).defaultReasoningModel ||
+        fields.model.trim()
     ])
     sets.push(['DISCORD_WEBHOOK_URL', fields.webhook.trim()])
     sets.push(['DISCORD_BOT_TOKEN', fields.botToken.trim()])
@@ -153,7 +154,7 @@ export default function Settings({
       model: preset.models[0]?.id ?? '',
       baseUrl: preset.baseUrl,
       reasoningModel:
-        preset.id === 'deepseek' ? 'deepseek-reasoner' : (preset.models[0]?.id ?? '')
+        preset.defaultReasoningModel || (preset.id === 'deepseek' ? 'deepseek-reasoner' : preset.models[0]?.id ?? '')
     })
   }
 
@@ -441,8 +442,8 @@ export default function Settings({
         <div>
           <h3 className="text-sm font-semibold text-slate-200">AI advisor</h3>
           <p className="mt-1 text-xs text-slate-500">
-            Use the provider you already have — DeepSeek, ChatGPT (OpenAI), Claude or Gemini. Any OpenAI-compatible
-            endpoint works too.
+            Use the provider you already have — DeepSeek, OpenRouter, ChatGPT (OpenAI), Claude or Gemini. Any
+            OpenAI-compatible endpoint works too.
           </p>
         </div>
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">

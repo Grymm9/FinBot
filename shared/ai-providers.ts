@@ -9,7 +9,7 @@
  * unit-tested and imported by the renderer.
  */
 
-export type AiProviderId = 'deepseek' | 'openai' | 'anthropic' | 'gemini' | 'custom'
+export type AiProviderId = 'deepseek' | 'openai' | 'anthropic' | 'gemini' | 'openrouter' | 'custom'
 
 export interface AiModelOption {
   id: string
@@ -25,6 +25,12 @@ export interface AiProviderPreset {
   /** Where the user creates a key (shown as helper text). */
   keyHint: string
   models: AiModelOption[]
+  /**
+   * Which model to use for tool-free "deep answers" when the user hasn't
+   * picked one. Defaults to the first model. DeepSeek and OpenRouter ship a
+   * dedicated reasoning model, so they get one here.
+   */
+  defaultReasoningModel?: string
 }
 
 export const AI_PROVIDERS: AiProviderPreset[] = [
@@ -37,7 +43,8 @@ export const AI_PROVIDERS: AiProviderPreset[] = [
     models: [
       { id: 'deepseek-chat', label: 'deepseek-chat (fast)' },
       { id: 'deepseek-reasoner', label: 'deepseek-reasoner (deep reasoning)' }
-    ]
+    ],
+    defaultReasoningModel: 'deepseek-reasoner'
   },
   {
     id: 'openai',
@@ -76,6 +83,20 @@ export const AI_PROVIDERS: AiProviderPreset[] = [
       { id: 'gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
       { id: 'gemini-2.0-flash', label: 'Gemini 2.0 Flash' }
     ]
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    keyPlaceholder: 'sk-or-…',
+    keyHint: 'openrouter.ai/keys',
+    models: [
+      { id: 'deepseek/deepseek-chat', label: 'DeepSeek V3 (fast, tools)' },
+      { id: 'deepseek/deepseek-reasoner', label: 'DeepSeek R1 (reasoning)' },
+      { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
+      { id: 'anthropic/claude-sonnet-4-5', label: 'Claude Sonnet 4.5' }
+    ],
+    defaultReasoningModel: 'deepseek/deepseek-reasoner'
   },
   {
     id: 'custom',
@@ -154,7 +175,8 @@ export function resolveAiConfig(input: AiConfigInput): AiConfig {
   const reasoningModel =
     (input.reasoningModel ?? '').trim() ||
     (legacyApplies ? (legacy.reasoningModel ?? '').trim() : '') ||
-    (provider === 'deepseek' ? 'deepseek-reasoner' : model)
+    preset.defaultReasoningModel ||
+    model
 
   return {
     provider,

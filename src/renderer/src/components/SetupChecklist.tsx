@@ -28,7 +28,7 @@ export default function SetupChecklist({
       detail: 'Connect Akahu, or import a bank statement CSV.',
       key: 'bank'
     },
-    !hasAi && { label: 'AI advisor is off', detail: 'Add an API key (DeepSeek, OpenAI, Claude or Gemini).', key: 'ai' },
+    !hasAi && { label: 'AI advisor is off', detail: 'Add an API key (DeepSeek, OpenRouter, OpenAI, Claude or Gemini).', key: 'ai' },
     !hasAlerts && { label: 'Alerts are off', detail: 'Add a Discord webhook for budget warnings.', key: 'alerts' }
   ].filter(Boolean) as Array<{ label: string; detail: string; key: string }>
 
