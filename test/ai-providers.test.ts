@@ -4,6 +4,7 @@ import {
   AI_PROVIDERS,
   aiProviderPreset,
   modelSupportsTemperature,
+  modelSupportsMaxTokens,
   normalizeAiProvider,
   resolveAiConfig
 } from '../shared/ai-providers.ts'
@@ -98,13 +99,22 @@ test('OpenAI reasoning models omit temperature', () => {
   assert.equal(modelSupportsTemperature('deepseek-chat'), true)
 })
 
+test('OpenAI reasoning models also reject max_tokens, others accept it', () => {
+  assert.equal(modelSupportsMaxTokens('o4-mini'), false)
+  assert.equal(modelSupportsMaxTokens('o3'), false)
+  assert.equal(modelSupportsMaxTokens('gpt-5-mini'), false)
+  assert.equal(modelSupportsMaxTokens('gpt-4o-mini'), true)
+  assert.equal(modelSupportsMaxTokens('claude-sonnet-4.5'), true)
+  assert.equal(modelSupportsMaxTokens('deepseek/deepseek-r1-0528'), true)
+})
+
 test('OpenRouter preset resolves to its OpenAI-compatible endpoint', () => {
   const cfg = resolveAiConfig({ provider: 'openrouter', apiKey: 'sk-or-…' })
   assert.equal(cfg.provider, 'openrouter')
   assert.equal(cfg.providerLabel, 'OpenRouter')
   assert.equal(cfg.baseUrl, 'https://openrouter.ai/api/v1')
   assert.equal(cfg.model, 'deepseek/deepseek-chat')
-  assert.equal(cfg.reasoningModel, 'deepseek/deepseek-reasoner')
+  assert.equal(cfg.reasoningModel, 'deepseek/deepseek-r1-0528')
   assert.equal(cfg.usable, true)
 })
 
@@ -112,13 +122,13 @@ test('OpenRouter tool path keeps a tool-capable model and namespaced slugs', () 
   const cfg = resolveAiConfig({
     provider: 'openrouter',
     model: 'google/gemini-2.5-pro',
-    reasoningModel: 'deepseek/deepseek-reasoner'
+    reasoningModel: 'deepseek/deepseek-r1-0528'
   })
   assert.equal(cfg.model, 'google/gemini-2.5-pro')
-  assert.equal(cfg.reasoningModel, 'deepseek/deepseek-reasoner')
+  assert.equal(cfg.reasoningModel, 'deepseek/deepseek-r1-0528')
 })
 
 test('cleared reasoning model falls back to the OpenRouter preset default', () => {
-  const cfg = resolveAiConfig({ provider: 'openrouter', model: 'anthropic/claude-sonnet-4-5', reasoningModel: '  ' })
-  assert.equal(cfg.reasoningModel, 'deepseek/deepseek-reasoner')
+  const cfg = resolveAiConfig({ provider: 'openrouter', model: 'anthropic/claude-sonnet-4.5', reasoningModel: '  ' })
+  assert.equal(cfg.reasoningModel, 'deepseek/deepseek-r1-0528')
 })

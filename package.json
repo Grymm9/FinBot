@@ -1,6 +1,6 @@
 {
   "name": "financebot",
-  "version": "0.8.2",
+  "version": "0.8.3",
   "description": "Local desktop financial management app with AI chat, Akahu bank sync, insurance auditing, and Discord alerts.",
   "author": "FinanceBot",
   "license": "MIT",

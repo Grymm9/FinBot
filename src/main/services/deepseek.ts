@@ -1,5 +1,5 @@
 import { aiConfig } from './ai-config'
-import { modelSupportsTemperature } from '@shared/ai-providers'
+import { modelSupportsTemperature, modelSupportsMaxTokens } from '@shared/ai-providers'
 import { toolDefinitions, executeTool } from './tools'
 
 interface ChatMessage {
@@ -129,6 +129,7 @@ async function streamReasoning(
 ): Promise<StreamResult> {
   const payload: Record<string, unknown> = { model, messages, stream: true }
   if (modelSupportsTemperature(model)) payload.temperature = opts.temperature ?? 0.4
+  if (modelSupportsMaxTokens(model)) payload.max_tokens = 8192
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: apiHeaders(apiKey),
@@ -187,6 +188,7 @@ async function callAction(
 ): Promise<{ content: string; toolCalls: ToolCall[] }> {
   const payload: Record<string, unknown> = { model, messages, tools, stream: false }
   if (modelSupportsTemperature(model)) payload.temperature = 0.2
+  if (modelSupportsMaxTokens(model)) payload.max_tokens = 2048
   const res = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: apiHeaders(apiKey),

@@ -1,5 +1,5 @@
 import { aiConfig } from './ai-config'
-import { modelSupportsTemperature } from '@shared/ai-providers'
+import { modelSupportsTemperature, modelSupportsMaxTokens } from '@shared/ai-providers'
 
 export interface SimpleMessage {
   role: 'system' | 'user' | 'assistant'
@@ -25,6 +25,7 @@ export async function quickChat(messages: SimpleMessage[]): Promise<string> {
     stream: false
   }
   if (modelSupportsTemperature(cfg.model)) payload.temperature = 0.2
+  if (modelSupportsMaxTokens(cfg.model)) payload.max_tokens = 1024
 
   try {
     const res = await fetch(`${cfg.baseUrl}/chat/completions`, {

@@ -92,11 +92,11 @@ export const AI_PROVIDERS: AiProviderPreset[] = [
     keyHint: 'openrouter.ai/keys',
     models: [
       { id: 'deepseek/deepseek-chat', label: 'DeepSeek V3 (fast, tools)' },
-      { id: 'deepseek/deepseek-reasoner', label: 'DeepSeek R1 (reasoning)' },
+      { id: 'deepseek/deepseek-r1-0528', label: 'DeepSeek R1 (reasoning)' },
       { id: 'google/gemini-2.5-pro', label: 'Gemini 2.5 Pro' },
-      { id: 'anthropic/claude-sonnet-4-5', label: 'Claude Sonnet 4.5' }
+      { id: 'anthropic/claude-sonnet-4.5', label: 'Claude Sonnet 4.5' }
     ],
-    defaultReasoningModel: 'deepseek/deepseek-reasoner'
+    defaultReasoningModel: 'deepseek/deepseek-r1-0528'
   },
   {
     id: 'custom',
@@ -194,6 +194,23 @@ export function resolveAiConfig(input: AiConfigInput): AiConfig {
  * them returns HTTP 400, so callers omit it for those model ids.
  */
 export function modelSupportsTemperature(model: string): boolean {
+  const m = model.trim().toLowerCase()
+  if (!m) return true
+  if (/^o[1-4](-|$)/.test(m)) return false
+  if (/^gpt-5/.test(m)) return false
+  return true
+}
+
+/**
+ * Same o-series / GPT-5 family also rejects a plain `max_tokens` — they expect
+ * `max_completion_tokens` instead. Callers omit `max_tokens` for those ids.
+ *
+ * On OpenRouter, leaving `max_tokens` out makes them reserve the model's full
+ * output window against the account balance, so low-balance accounts get a
+ * 402 "requires more credits" before the request even runs. An explicit,
+ * modest cap fixes that and keeps billing predictable everywhere.
+ */
+export function modelSupportsMaxTokens(model: string): boolean {
   const m = model.trim().toLowerCase()
   if (!m) return true
   if (/^o[1-4](-|$)/.test(m)) return false
